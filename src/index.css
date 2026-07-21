@@ -1,0 +1,1136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===================== 主题系统 ===================== */
+:root,
+[data-theme="light"] {
+  --textora-bg: #ffffff;
+  --textora-bg-elev: #f7f8fa;
+  --textora-bg-muted: #eef0f3;
+  --textora-fg: #1f2328;
+  --textora-fg-muted: #57606a;
+  --textora-border: #d0d7de;
+  --textora-accent: #0969da;
+  --textora-accent-fg: #ffffff;
+  --textora-code-bg: #f6f8fa;
+  --textora-shadow: 0 1px 3px rgba(31, 35, 40, 0.06);
+
+  --milkdown-theme-bg: #ffffff;
+  --milkdown-theme-text: #1f2328;
+  --milkdown-theme-border: #d0d7de;
+  --milkdown-theme-code-bg: #f6f8fa;
+  --milkdown-theme-link: #0969da;
+  --milkdown-theme-h1: #1f2328;
+  --milkdown-theme-h2: #1f2328;
+  --milkdown-theme-h3: #1f2328;
+  --milkdown-theme-blockquote: #57606a;
+  --milkdown-theme-emphasis: #1f2328;
+  --milkdown-theme-strong: #1f2328;
+  --milkdown-theme-strike: #1f2328;
+  --milkdown-theme-inline-code: #1f2328;
+  --milkdown-theme-list: #1f2328;
+}
+
+[data-theme="dark"] {
+  --textora-bg: #0d1117;
+  --textora-bg-elev: #161b22;
+  --textora-bg-muted: #21262d;
+  --textora-fg: #e6edf3;
+  --textora-fg-muted: #8b949e;
+  --textora-border: #30363d;
+  --textora-accent: #58a6ff;
+  --textora-accent-fg: #0d1117;
+  --textora-code-bg: #161b22;
+  --textora-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+
+  --milkdown-theme-bg: #0d1117;
+  --milkdown-theme-text: #e6edf3;
+  --milkdown-theme-border: #30363d;
+  --milkdown-theme-code-bg: #161b22;
+  --milkdown-theme-link: #58a6ff;
+  --milkdown-theme-h1: #e6edf3;
+  --milkdown-theme-h2: #e6edf3;
+  --milkdown-theme-h3: #e6edf3;
+  --milkdown-theme-blockquote: #8b949e;
+  --milkdown-theme-emphasis: #e6edf3;
+  --milkdown-theme-strong: #e6edf3;
+  --milkdown-theme-strike: #e6edf3;
+  --milkdown-theme-inline-code: #e6edf3;
+  --milkdown-theme-list: #e6edf3;
+}
+
+/* Sepia: 偏暖白 */
+[data-theme="sepia"] {
+  --textora-bg: #f4ecd8;
+  --textora-bg-elev: #ece2c4;
+  --textora-bg-muted: #ddd0b0;
+  --textora-fg: #5b4636;
+  --textora-fg-muted: #8a6d4f;
+  --textora-border: #c9b58e;
+  --textora-accent: #a8541f;
+  --textora-accent-fg: #f9f2dc;
+  --textora-code-bg: #ece2c4;
+  --textora-shadow: 0 1px 3px rgba(91, 70, 54, 0.15);
+
+  --milkdown-theme-bg: #f4ecd8;
+  --milkdown-theme-text: #5b4636;
+  --milkdown-theme-border: #c9b58e;
+  --milkdown-theme-code-bg: #ece2c4;
+  --milkdown-theme-link: #a8541f;
+  --milkdown-theme-h1: #5b4636;
+  --milkdown-theme-h2: #5b4636;
+  --milkdown-theme-h3: #5b4636;
+  --milkdown-theme-blockquote: #8a6d4f;
+  --milkdown-theme-emphasis: #5b4636;
+  --milkdown-theme-strong: #5b4636;
+  --milkdown-theme-strike: #5b4636;
+  --milkdown-theme-inline-code: #5b4636;
+  --milkdown-theme-list: #5b4636;
+}
+
+/* Nord: 蓝灰冷色 */
+[data-theme="nord"] {
+  --textora-bg: #2e3440;
+  --textora-bg-elev: #3b4252;
+  --textora-bg-muted: #434c5e;
+  --textora-fg: #eceff4;
+  --textora-fg-muted: #d8dee9;
+  --textora-border: #4c566a;
+  --textora-accent: #88c0d0;
+  --textora-accent-fg: #2e3440;
+  --textora-code-bg: #3b4252;
+  --textora-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+
+  --milkdown-theme-bg: #2e3440;
+  --milkdown-theme-text: #eceff4;
+  --milkdown-theme-border: #4c566a;
+  --milkdown-theme-code-bg: #3b4252;
+  --milkdown-theme-link: #88c0d0;
+  --milkdown-theme-h1: #eceff4;
+  --milkdown-theme-h2: #eceff4;
+  --milkdown-theme-h3: #eceff4;
+  --milkdown-theme-blockquote: #d8dee9;
+  --milkdown-theme-emphasis: #eceff4;
+  --milkdown-theme-strong: #eceff4;
+  --milkdown-theme-strike: #eceff4;
+  --milkdown-theme-inline-code: #eceff4;
+  --milkdown-theme-list: #eceff4;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--textora-bg);
+  color: var(--textora-fg);
+  font-family: theme("fontFamily.sans");
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===================== 通用工具类 ===================== */
+.textora-card {
+  background: var(--textora-bg-elev);
+  border: 1px solid var(--textora-border);
+  border-radius: 6px;
+  box-shadow: var(--textora-shadow);
+}
+
+.textora-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--textora-border);
+  background: var(--textora-bg-elev);
+  color: var(--textora-fg);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  line-height: 1.4;
+}
+.textora-btn:hover {
+  background: var(--textora-bg-muted);
+}
+.textora-btn-primary {
+  background: var(--textora-accent);
+  color: var(--textora-accent-fg);
+  border-color: var(--textora-accent);
+}
+.textora-btn-primary:hover {
+  filter: brightness(1.1);
+  background: var(--textora-accent);
+}
+
+/* ===================== 过渡动画 ===================== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===================== Milkdown 编辑器皮肤 ===================== */
+.milkdown {
+  background: var(--milkdown-theme-bg);
+  color: var(--milkdown-theme-text);
+}
+
+.milkdown .ProseMirror > * + * {
+  margin-top: 0.75em;
+}
+
+.milkdown h1,
+.milkdown h2,
+.milkdown h3,
+.milkdown h4,
+.milkdown h5,
+.milkdown h6 {
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--milkdown-theme-h1);
+}
+.milkdown .ProseMirror h1 {
+  font-size: 1.85em; font-weight: 600; line-height: 1.3;
+  margin-top: 1.4em; margin-bottom: 0.6em;
+  border-bottom: 1px solid var(--milkdown-theme-border);
+  padding-bottom: 0.25em;
+}
+.milkdown .ProseMirror h2 {
+  font-size: 1.5em; font-weight: 600; line-height: 1.35;
+  margin-top: 1.3em; margin-bottom: 0.5em;
+  border-bottom: 1px solid var(--milkdown-theme-border);
+  padding-bottom: 0.2em;
+}
+.milkdown .ProseMirror h3 {
+  font-size: 1.25em; font-weight: 600;
+  margin-top: 1.2em; margin-bottom: 0.4em;
+}
+.milkdown h4 {
+  font-size: 1.1em;
+}
+.milkdown h5 {
+  font-size: 1em;
+}
+.milkdown h6 {
+  font-size: 0.9em;
+  color: var(--milkdown-theme-blockquote);
+}
+
+.milkdown p {
+  color: var(--milkdown-theme-text);
+}
+
+.milkdown a {
+  color: var(--milkdown-theme-link);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.milkdown a:hover {
+  border-bottom-color: var(--milkdown-theme-link);
+}
+
+.milkdown strong {
+  color: var(--milkdown-theme-strong);
+  font-weight: 700;
+}
+.milkdown em {
+  color: var(--milkdown-theme-emphasis);
+  font-style: italic;
+}
+.milkdown del {
+  color: var(--milkdown-theme-strike);
+}
+
+.milkdown code {
+  font-family: theme("fontFamily.mono");
+  font-size: 0.9em;
+  background: var(--milkdown-theme-code-bg);
+  border: 1px solid var(--milkdown-theme-border);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.milkdown pre {
+  font-family: theme("fontFamily.mono");
+  background: var(--milkdown-theme-code-bg);
+  border: 1px solid var(--milkdown-theme-border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  font-size: 0.9em;
+  line-height: 1.6;
+}
+.milkdown pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.milkdown ul,
+.milkdown ol {
+  padding-left: 1.6em;
+  color: var(--milkdown-theme-list);
+}
+.milkdown .ProseMirror ul,
+.milkdown .ProseMirror ol {
+  margin: 0.5em 0;
+}
+.milkdown .ProseMirror li {
+  margin: 0.15em 0;
+}
+.milkdown ul li {
+  list-style: disc;
+}
+.milkdown ol li {
+  list-style: decimal;
+}
+.milkdown li > p {
+  margin: 0;
+}
+.milkdown li::marker {
+  color: var(--textora-fg-muted);
+}
+
+/* 引用块 */
+.milkdown .ProseMirror blockquote {
+  border-left: 3px solid var(--milkdown-theme-border);
+  padding: 0.5em 1em; margin: 0.8em 0;
+  color: var(--milkdown-theme-blockquote);
+}
+
+/* 分隔线 */
+.milkdown .ProseMirror hr { border: none; border-top: 1px solid var(--milkdown-theme-border); margin: 2em 0; }
+
+/* 表格 */
+.milkdown .ProseMirror table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+.milkdown .ProseMirror th,
+.milkdown .ProseMirror td { border: 1px solid var(--milkdown-theme-border); padding: 8px 12px; text-align: left; }
+.milkdown .ProseMirror th { background: var(--milkdown-theme-code-bg); font-weight: 600; }
+
+/* ===================== 表格列宽拖拽调整 ===================== */
+.milkdown .ProseMirror table { position: relative; }
+/* 拖拽调整过的表格使用 fixed 布局，让显式列宽严格生效 */
+.milkdown .ProseMirror table.textora-table-resized { table-layout: fixed; }
+.milkdown .ProseMirror table.textora-table-resized th,
+.milkdown .ProseMirror table.textora-table-resized td {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.milkdown .ProseMirror th,
+.milkdown .ProseMirror td { position: relative; }
+
+.milkdown img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* ===================== 专注模式：淡化非活动段落 ===================== */
+.milkdown .textora-dimmed {
+  opacity: 0.3;
+  transition: opacity 0.2s ease;
+}
+.milkdown .textora-dimmed:hover {
+  opacity: 0.6;
+}
+.milkdown .textora-focused {
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+/* ===================== 阶段 3：代码高亮 / 公式 / 图表 ===================== */
+
+/* 代码块容器 */
+.textora-codeblock-wrap {
+  position: relative;
+  margin: 1em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--milkdown-theme-code-bg);
+  border: 1px solid var(--milkdown-theme-border);
+}
+
+/* 隐藏原始 pre 的 markdown 语法标记 */
+.textora-codeblock-wrap .milkdown-code-block {
+  margin: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  position: relative;
+  z-index: 2;
+}
+
+.textora-codeblock-wrap .milkdown-code-block code {
+  display: block;
+  padding: 16px 18px !important;
+  color: transparent !important;
+  background: transparent !important;
+  border: none !important;
+  font-family: theme("fontFamily.mono") !important;
+  font-size: 0.9em !important;
+  line-height: 1.6 !important;
+  white-space: pre !important;
+  overflow-x: auto !important;
+  caret-color: var(--textora-fg);
+}
+
+/* 代码块顶部工具栏 */
+.textora-code-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--textora-bg-muted);
+  border-bottom: 1px solid var(--milkdown-theme-border);
+  z-index: 3;
+  font-size: 12px;
+}
+
+.textora-code-lang {
+  color: var(--textora-fg-muted);
+  font-family: theme("fontFamily.mono");
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 语言切换下拉框（compact） */
+.textora-code-lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 2px 18px 2px 6px;
+  border: 1px solid var(--milkdown-theme-border);
+  border-radius: 4px;
+  background-color: var(--textora-bg-elev);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='3'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  cursor: pointer;
+  max-width: 110px;
+  outline: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.textora-code-lang-select:hover {
+  border-color: var(--textora-fg-muted);
+  color: var(--textora-fg);
+}
+
+.textora-code-lang-select:focus {
+  border-color: var(--textora-accent, #4c9aff);
+  color: var(--textora-fg);
+}
+
+.textora-code-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.textora-code-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--textora-fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.textora-code-btn:hover {
+  background: var(--textora-bg-elev);
+  color: var(--textora-fg);
+}
+
+.textora-code-btn.copied {
+  color: #10b981;
+}
+
+/* Shiki 渲染层 */
+.textora-code-render {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.textora-shiki-pre {
+  margin: 0 !important;
+  padding: 16px 18px !important;
+  border-radius: 0 !important;
+  font-family: theme("fontFamily.mono") !important;
+  font-size: 0.9em !important;
+  line-height: 1.6 !important;
+  overflow-x: auto !important;
+  border: none !important;
+  background: transparent !important;
+  height: 100%;
+}
+
+.textora-shiki-pre code {
+  font-family: theme("fontFamily.mono") !important;
+  font-size: inherit !important;
+}
+
+/* 数学公式 */
+.textora-math-inline {
+  display: inline-block;
+  margin: 0 1px;
+}
+.textora-math-inline .katex {
+  font-size: 1em;
+}
+.textora-math-block {
+  display: block;
+  text-align: center;
+  margin: 1em 0;
+  padding: 0.5em 0;
+}
+.textora-math-block .katex-display {
+  margin: 0;
+}
+
+/* Mermaid */
+.textora-mermaid {
+  display: flex;
+  justify-content: center;
+  background: var(--milkdown-theme-code-bg);
+  border: 1px solid var(--milkdown-theme-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 1em 0;
+  min-height: 60px;
+}
+.textora-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.textora-mermaid-error {
+  color: #d4380d;
+  font-family: theme("fontFamily.mono");
+  font-size: 0.85em;
+  margin-bottom: 8px;
+}
+.textora-mermaid[data-mermaid="pending"]::after {
+  content: "渲染中...";
+  color: var(--textora-fg-muted);
+  font-size: 0.85em;
+}
+
+/* TOC 目录卡片 */
+.textora-toc {
+  background: var(--milkdown-theme-code-bg);
+  border: 1px solid var(--milkdown-theme-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 1em 0;
+}
+.textora-toc-title {
+  font-weight: 600;
+  font-size: 0.9em;
+  margin-bottom: 6px;
+  color: var(--textora-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.textora-toc-empty {
+  color: var(--textora-fg-muted);
+  font-size: 0.9em;
+  font-style: italic;
+}
+.textora-toc-list {
+  display: flex;
+  flex-direction: column;
+}
+.textora-toc-item {
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.95em;
+  color: var(--milkdown-theme-link);
+  transition: background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.textora-toc-item:hover {
+  background: var(--textora-bg-muted);
+}
+
+/* 让 code_block 在 Shiki 装饰器存在时，作为可编辑载体 */
+.milkdown .ProseMirror pre.milkdown-code-block {
+  position: relative;
+  min-height: 1.5em;
+}
+
+/* ===================== ProseMirror 占位符 ===================== */
+.milkdown .ProseMirror.is-editor-empty::before,
+.milkdown .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--textora-fg-muted);
+  content: "开始撰写你的想法...";
+  float: left;
+  height: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* 暗色主题下选中文本的背景色 */
+.milkdown .ProseMirror ::selection {
+  background: color-mix(in srgb, var(--textora-accent) 25%, transparent);
+}
+
+/* ===================== 滚动条 ===================== */
+
+/* ===================== 编辑器居中布局 (Typora 风格) ===================== */
+.textora-editor-shell {
+  height: 100%;
+  width: 100%;
+  overflow: auto;
+  scroll-behavior: smooth;
+}
+
+/* Milkdown 编辑器居中 */
+.milkdown { height: 100%; }
+.milkdown .ProseMirror {
+  outline: none;
+  min-height: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 40px clamp(24px, 6vw, 80px) 200px;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--milkdown-theme-text);
+  caret-color: var(--textora-accent);
+}
+
+/* 平滑滚动 */
+html { scroll-behavior: smooth; }
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--textora-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--textora-fg-muted);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* ===================== 附加动画 ===================== */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* 多光标闪烁动画 */
+@keyframes textora-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* ===================== 工具类 ===================== */
+.textora-animate-fade {
+  animation: fadeIn 0.2s ease forwards;
+}
+
+.textora-animate-slide-up {
+  animation: slideUp 0.25s ease forwards;
+}
+
+/* 全局平滑过渡（仅颜色属性） */
+.textora-btn,.textora-card,.textora-menu-item,.file-tree-row,.sidebar-tab,.status-bar-item {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+/* 不需要过渡的元素 */
+textarea,
+input,
+[contenteditable],
+.no-transition {
+  transition: none !important;
+}
+
+/* ===================== 通用代码/文本编辑器（CodeEditor） ===================== */
+.textora-code-root {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.textora-code-gutter {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 52px;
+  overflow: hidden;
+  text-align: right;
+  padding: 0 8px;
+  color: var(--textora-fg-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.6;
+  user-select: none;
+  border-right: 1px solid var(--textora-border);
+  background: var(--textora-bg-elev);
+}
+
+.textora-code-area {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 52px;
+}
+
+.textora-code-pre,
+.textora-code-textarea {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border: 0;
+  padding: 12px 16px;
+  overflow: auto;
+  white-space: pre;
+  tab-size: 2;
+  font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  line-height: 1.6;
+  caret-color: var(--textora-accent);
+  background: transparent;
+}
+
+.textora-code-pre {
+  z-index: 1;
+  pointer-events: none;
+  color: var(--textora-fg);
+}
+.textora-code-pre pre {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  white-space: pre;
+}
+
+.textora-code-textarea {
+  z-index: 2;
+  resize: none;
+  outline: none;
+  color: transparent;
+  background: transparent;
+}
+.textora-code-textarea::selection {
+  background: color-mix(in srgb, var(--textora-accent) 25%, transparent);
+}
+.textora-code-textarea::-moz-selection {
+  background: color-mix(in srgb, var(--textora-accent) 25%, transparent);
+}
+
+/* 图片查看器 */
+.textora-image-view {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background: var(--textora-bg);
+  padding: 24px;
+}
+.textora-image-view img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  box-shadow: var(--textora-shadow);
+}
+
+/* 二进制 / 十六进制查看器 */
+.textora-hex-view {
+  height: 100%;
+  width: 100%;
+  overflow: auto;
+  padding: 16px;
+  background: var(--textora-bg);
+}
+.textora-hex-view pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--textora-fg);
+  white-space: pre;
+}
+
+/* 标签栏 */
+.textora-tabbar {
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  background: var(--textora-bg-elev);
+  border-bottom: 1px solid var(--textora-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+}
+.textora-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 100%;
+  border-right: 1px solid var(--textora-border);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--textora-fg-muted);
+  white-space: nowrap;
+  max-width: 220px;
+  user-select: none;
+  position: relative;
+}
+.textora-tab.active {
+  background: var(--textora-bg);
+  color: var(--textora-fg);
+}
+.textora-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--textora-accent);
+}
+.textora-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.textora-tab-dirty {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--textora-accent);
+  flex-shrink: 0;
+}
+.textora-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--textora-fg-muted);
+  flex-shrink: 0;
+}
+.textora-tab-close:hover {
+  background: var(--textora-bg-muted);
+  color: var(--textora-fg);
+}
+
+/* 命令面板 / 在文件中查找 公共弹层 */
+.textora-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+.textora-palette {
+  width: 560px;
+  max-width: 92vw;
+  max-height: 70vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.textora-palette-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: transparent;
+  outline: none;
+  border: none;
+  border-bottom: 1px solid var(--textora-border);
+  color: var(--textora-fg);
+  font-size: 14px;
+}
+.textora-palette-list {
+  overflow: auto;
+  max-height: 50vh;
+}
+.textora-palette-item {
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.textora-palette-item.active {
+  background: var(--textora-bg-muted);
+}
+.textora-palette-item .hint {
+  color: var(--textora-fg-muted);
+  font-size: 11px;
+}
+
+/* 在文件中查找结果 */
+.textora-search-hit {
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 1px solid var(--textora-border);
+}
+.textora-search-hit:hover {
+  background: var(--textora-bg-muted);
+}
+.textora-search-hit .path {
+  color: var(--textora-fg-muted);
+  font-size: 11px;
+}
+.textora-search-hit .line-no {
+  color: var(--textora-accent);
+  margin-right: 6px;
+}
+
+/* 三态保存确认弹窗 */
+.textora-confirm {
+  width: 380px;
+  max-width: 90vw;
+  padding: 18px;
+}
+.textora-confirm .msg {
+  font-size: 13px;
+  color: var(--textora-fg);
+  margin: 10px 0 16px;
+  line-height: 1.5;
+}
+.textora-confirm .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 状态栏可点击段 */
+.status-bar-item.clickable {
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.status-bar-item.clickable:hover {
+  background: var(--textora-bg-muted);
+}
+
+/* ===================== 代码块语言选择器 ===================== */
+.textora-code-lang-selector {
+  display: inline-block;
+  position: relative;
+  user-select: none;
+}
+
+.textora-code-lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--textora-fg-muted);
+  background: var(--textora-bg-elev, rgba(127,127,127,0.15));
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  opacity: 0.8;
+}
+
+.textora-code-lang-btn:hover {
+  color: var(--textora-fg);
+  border-color: var(--textora-border);
+  opacity: 1;
+}
+
+.textora-code-lang-dropdown {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--textora-bg-elev);
+  border: 1px solid var(--textora-border);
+  border-radius: 6px;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.12);
+  z-index: 200;
+  min-width: 150px;
+  padding: 4px 0;
+}
+
+.textora-code-lang-item {
+  padding: 5px 16px;
+  font-size: 12px;
+  color: var(--textora-fg);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.textora-code-lang-item:hover {
+  background: var(--textora-bg-muted);
+}
+
+.textora-code-lang-item.active {
+  color: var(--textora-accent);
+  font-weight: 600;
+}
+
+.textora-code-lang-item {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--textora-fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.textora-code-lang-item:hover {
+  background: var(--textora-bg-muted);
+}
+
+.textora-code-lang-item.active {
+  color: var(--textora-accent);
+  font-weight: 600;
+}
+
+/* ===================== AI 助手面板 ===================== */
+.textora-ai-toggle {
+  transition: all 0.2s ease;
+}
+
+.textora-ai-toggle:hover {
+  transform: scale(1.08);
+  border-color: var(--textora-accent) !important;
+  color: var(--textora-accent) !important;
+}
+
+.textora-ai-panel {
+  animation: slideInRight 0.25s ease forwards;
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.textora-cursor-blink {
+  animation: textora-blink 1s infinite;
+  color: var(--textora-accent);
+  font-weight: 700;
+}
+
+
+/* ===================== Typora 风格代码块语言选择器（右下角） ===================== */
+.textora-code-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  z-index: 10;
+}
+
+.textora-codeblock-wrap:hover .textora-code-footer {
+  opacity: 1;
+}
+
+.textora-code-copy-btn {
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: none;
+  background: var(--textora-bg-elev, rgba(127,127,127,0.15));
+  color: var(--textora-fg-muted);
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.15s;
+  opacity: 0.7;
+}
+
+.textora-code-copy-btn:hover {
+  opacity: 1;
+  color: var(--textora-fg);
+  background: var(--textora-bg-elev, rgba(127,127,127,0.25));
+}
+
+.textora-code-copy-btn.copied {
+  color: #10b981;
+  opacity: 1;
+}
+
+/* Shiki render area - no top padding since header is gone */
+.textora-code-render {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.textora-shiki-pre {
+  margin: 0 !important;
+  padding: 16px 18px !important;
+  border-radius: 0 !important;
+  font-family: theme("fontFamily.mono") !important;
+  font-size: 0.9em !important;
+  line-height: 1.6 !important;
+  overflow-x: auto !important;
+  border: none !important;
+  background: transparent !important;
+}
