@@ -277,6 +277,9 @@ function CloseIcon() {
 
 // ===== Entry Component =====
 
+// 模块级稳定引用：目录无条目时避免 selector 每次返回新数组导致重渲染
+const EMPTY_DIR_ENTRIES: DirEntry[] = [];
+
 function Entry({
   entry,
   depth,
@@ -284,10 +287,14 @@ function Entry({
   entry: DirEntry;
   depth: number;
 }) {
-  const expanded = useAppStore((s) => s.expanded);
+  // 细粒度订阅：只关心本节点相关的状态（本目录是否展开/本目录条目/本节点是否选中）。
+  // 直接订阅整个 expanded/entriesByDir 对象时，展开任意目录会触发全部节点重渲染——
+  // 大目录树（上千节点）下每次展开/收起都卡顿。
+  const key = normalizePath(entry.path);
+  const isExpanded = useAppStore((s) => !!s.expanded[key]);
   const toggleExpanded = useAppStore((s) => s.toggleExpanded);
-  const entriesByDir = useAppStore((s) => s.entriesByDir);
-  const selectedPath = useAppStore((s) => s.selectedPath);
+  const allChildren = useAppStore((s) => s.entriesByDir[key] ?? EMPTY_DIR_ENTRIES);
+  const isSelected = useAppStore((s) => s.selectedPath === entry.path);
   const selectPath = useAppStore((s) => s.selectPath);
   const openPath = useAppStore((s) => s.openPath);
   const checkBeforeOpen = useAppStore((s) => s.checkBeforeOpen);
@@ -311,11 +318,8 @@ function Entry({
   const [creating, setCreating] = useState<"file" | "folder" | null>(null);
   const [createName, setCreateName] = useState("");
 
-  const key = normalizePath(entry.path);
   const isDir = entry.is_dir;
-  const isOpen = !!expanded[key] || (isFiltering && filter.autoExpandedDirs.has(key));
-  const isSelected = selectedPath === entry.path;
-  const allChildren = entriesByDir[key] || [];
+  const isOpen = isExpanded || (isFiltering && filter.autoExpandedDirs.has(key));
   const children = isFiltering
     ? allChildren.filter((c) => filter.visiblePaths.has(c.path))
     : allChildren;
@@ -463,6 +467,7 @@ function Entry({
             onChange={(e) => setNewName(e.target.value)}
             onBlur={submitRename}
             onKeyDown={(e) => {
+              e.stopPropagation();
               if (e.key === "Enter") submitRename();
               if (e.key === "Escape") setRenaming(false);
             }}
@@ -677,6 +682,17 @@ export function FileTree() {
     }
   };
 
+  // Hooks 规则：所有 Hook 必须在 early return 之前无条件调用。
+  // 无工作区时 rootKey 为 null，useMemo 内部做空值兜底。
+  const rootKey = workspaceRoot ? normalizePath(workspaceRoot) : null;
+  const filterState = useMemo(() => {
+    if (!rootKey) {
+      return { keyword: "", visiblePaths: new Set<string>(), autoExpandedDirs: new Set<string>() };
+    }
+    const { visiblePaths, autoExpandedDirs } = computeFilter(entriesByDir, rootKey, debouncedFilter);
+    return { keyword: debouncedFilter, visiblePaths, autoExpandedDirs };
+  }, [entriesByDir, rootKey, debouncedFilter]);
+
   if (!workspaceRoot) {
     return (
       <div
@@ -695,13 +711,7 @@ export function FileTree() {
     );
   }
 
-  const rootKey = normalizePath(workspaceRoot);
-  const rootEntries = entriesByDir[rootKey] || [];
-
-  const filterState = useMemo(() => {
-    const { visiblePaths, autoExpandedDirs } = computeFilter(entriesByDir, rootKey, debouncedFilter);
-    return { keyword: debouncedFilter, visiblePaths, autoExpandedDirs };
-  }, [entriesByDir, rootKey, debouncedFilter]);
+  const rootEntries = rootKey ? entriesByDir[rootKey] || [] : [];
 
   const visibleRootEntries = isFiltering
     ? rootEntries.filter((e) => filterState.visiblePaths.has(e.path))

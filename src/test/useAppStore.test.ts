@@ -1,7 +1,7 @@
 /**
  * useAppStore 核心逻辑单元测试
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useAppStore, getActiveTab } from "../store/useAppStore";
 
 describe("useAppStore", () => {
@@ -153,4 +153,108 @@ describe("useAppStore", () => {
       expect(tab!.kind).toBe("markdown");
     });
   });
+
+  describe("closeAllTabs closeFlow（关窗确认链回归）", () => {
+    it("有脏标签时确认链期间 closeFlow 保持 closing，onCancel 后恢复 idle", () => {
+      useAppStore.getState().newFile();
+      useAppStore.getState().setContent("dirty content");
+      useAppStore.getState().closeAllTabs();
+      // 确认链开始：进入 closing
+      expect(useAppStore.getState().closeFlow).toBe("closing");
+      expect(useAppStore.getState().pendingConfirm).not.toBeNull();
+      // 用户取消：恢复 idle，标签保留
+      useAppStore.getState().pendingConfirm!.onCancel();
+      expect(useAppStore.getState().closeFlow).toBe("idle");
+      expect(useAppStore.getState().pendingConfirm).toBeNull();
+      expect(useAppStore.getState().tabs).toHaveLength(1);
+    });
+
+    it("多标签 onDiscard 继续确认链：处理第一个标签后 closeFlow 仍为 closing", () => {
+      useAppStore.getState().newFile();
+      useAppStore.getState().setContent("dirty 1");
+      useAppStore.getState().newFile();
+      useAppStore.getState().setContent("dirty 2");
+      const secondId = useAppStore.getState().tabs[1].id;
+      useAppStore.getState().closeAllTabs();
+      const p = useAppStore.getState().pendingConfirm!;
+      p.onDiscard();
+      // 处理完第一个标签后链继续：closeFlow 必须仍为 closing（unsubCancel 不触发），
+      // 且确认框指向第二个标签；标签在链末统一清空
+      expect(useAppStore.getState().closeFlow).toBe("closing");
+      expect(useAppStore.getState().pendingConfirm).not.toBeNull();
+      expect(useAppStore.getState().tabs).toHaveLength(2);
+      // 处理完最后一个标签：链完成，清空并恢复 idle
+      useAppStore.getState().pendingConfirm!.onDiscard();
+      expect(useAppStore.getState().tabs).toHaveLength(0);
+      expect(useAppStore.getState().closeFlow).toBe("idle");
+      expect(secondId).toBeTruthy();
+    });
+
+    it("无脏标签时直接清空且不进入 closing", () => {
+      useAppStore.getState().newFile();
+      useAppStore.getState().closeAllTabs();
+      expect(useAppStore.getState().tabs).toHaveLength(0);
+      expect(useAppStore.getState().closeFlow).toBe("idle");
+    });
+  });
 });
+
+  describe("session restore（reload 未保存修改恢复）", () => {
+    afterEach(() => {
+      localStorage.removeItem("textora.session");
+      localStorage.removeItem("textora.workspace");
+    });
+
+    function mockOpenFile() {
+      (window.textora.invoke as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        path: "C:/work/doc.md",
+        name: "doc.md",
+        kind: "markdown",
+        language: "markdown",
+        text: "disk content",
+        encoding: "utf-8",
+        line_ending: "lf",
+        size: 12,
+      });
+    }
+
+    it("有 dirtyTabs 时恢复为 dirty=true 且使用缓存内容", async () => {
+      localStorage.setItem(
+        "textora.session",
+        JSON.stringify({
+          tabs: [{ path: "C:/work/doc.md" }],
+          activePath: "C:/work/doc.md",
+          dirtyTabs: [
+            { path: "C:/work/doc.md", content: "unsaved edits", encoding: "utf-8", lineEnding: "lf" },
+          ],
+        }),
+      );
+      mockOpenFile();
+
+      await useAppStore.getState().init();
+
+      const state = useAppStore.getState();
+      expect(state.tabs).toHaveLength(1);
+      expect(state.tabs[0].content).toBe("unsaved edits");
+      expect(state.tabs[0].dirty).toBe(true);
+      expect(state.activeTabId).toBe(state.tabs[0].id);
+      // 恢复完成后回写 session，清除 dirtyTabs，避免下次重复恢复
+      const written = JSON.parse(localStorage.getItem("textora.session")!) as { dirtyTabs?: unknown };
+      expect(written.dirtyTabs).toBeUndefined();
+    });
+
+    it("无 dirtyTabs 时从磁盘恢复为干净标签", async () => {
+      localStorage.setItem(
+        "textora.session",
+        JSON.stringify({ tabs: [{ path: "C:/work/doc.md" }], activePath: "C:/work/doc.md" }),
+      );
+      mockOpenFile();
+
+      await useAppStore.getState().init();
+
+      const state = useAppStore.getState();
+      expect(state.tabs).toHaveLength(1);
+      expect(state.tabs[0].content).toBe("disk content");
+      expect(state.tabs[0].dirty).toBe(false);
+    });
+  });

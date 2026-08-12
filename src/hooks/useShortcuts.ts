@@ -1,5 +1,6 @@
-﻿import { useEffect } from "react";
+import { useEffect } from "react";
 import { useAppStore, getActiveTab } from "../store/useAppStore";
+import { showPrompt } from "../ui/showPrompt";
 import { Macro, MacroRecorder, MacroPlayer, saveMacro, getMacros } from "../editor/macro";
 import {
   SHORTCUTS,
@@ -121,6 +122,9 @@ function executeShortcut(id: string, _e: KeyboardEvent): void {
     case "bookmark.clearAll":
       clearAllBookmarks();
       break;
+    case "app.openSettings":
+      useAppStore.getState().setSettingsPanelOpen(true);
+      break;
     default:
       break;
   }
@@ -168,7 +172,7 @@ function toggleBookmark() {
   }
 
   const path = tab.path;
-  let bms = getBookmarks();
+  const bms = getBookmarks();
   const existing = bms.findIndex(b => b.path === path && b.line === line);
   if (existing >= 0) {
     bms.splice(existing, 1);
@@ -234,33 +238,38 @@ function clearAllBookmarks() {
 
 let recorder: any = null;
 let lastMacroActions: any[] = [];
+let macroToggling = false;
 
 async function toggleMacroRecording() {
-  const mod = await import("../editor/macro");
-  if (!recorder) recorder = new MacroRecorder();
-  if (recorder.isRecording()) {
-    lastMacroActions = recorder.stopRecording();
-    const name = prompt("Macro name?", "Macro " + new Date().toLocaleTimeString());
-    if (name && lastMacroActions.length > 0) {
-      const macro: Macro = {
-        id: "macro-" + Date.now(),
-        name,
-        actions: lastMacroActions,
-        createdAt: Date.now(),
-      };
-      saveMacro(macro);
-      console.log("[Macro] Saved:", macro.name, lastMacroActions.length, "actions");
+  if (macroToggling) return;
+  macroToggling = true;
+  try {
+    if (!recorder) recorder = new MacroRecorder();
+    if (recorder.isRecording()) {
+      lastMacroActions = recorder.stopRecording();
+      const name = await showPrompt("Macro name?", "Macro " + new Date().toLocaleTimeString());
+      if (name && lastMacroActions.length > 0) {
+        const macro: Macro = {
+          id: "macro-" + Date.now(),
+          name,
+          actions: lastMacroActions,
+          createdAt: Date.now(),
+        };
+        saveMacro(macro);
+        console.log("[Macro] Saved:", macro.name, lastMacroActions.length, "actions");
+      }
+    } else {
+      recorder.startRecording();
+      console.log("[Macro] Recording started...");
     }
-  } else {
-    recorder.startRecording();
-    console.log("[Macro] Recording started...");
+  } finally {
+    macroToggling = false;
   }
 }
 
 async function playLastMacro() {
   if (lastMacroActions.length === 0) {
     // Try to load the most recent macro
-    const mod = await import("../editor/macro");
     const macros = getMacros();
     if (macros.length === 0) return;
     const last = macros[macros.length - 1];
@@ -268,7 +277,6 @@ async function playLastMacro() {
   }
   if (lastMacroActions.length === 0) return;
 
-  const mod = await import("../editor/macro");
   const player = new MacroPlayer();
   const api = useAppStore.getState().codeEditorApi;
   if (api) {

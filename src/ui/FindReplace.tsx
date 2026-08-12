@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useAppStore, getActiveTab } from "../store/useAppStore";
+import { useAppStore } from "../store/useAppStore";
 import {
   findAllInDoc,
-  replaceAllInDoc,
+  replaceAllInDocAsync,
+  replaceAllInText,
   selectMatch,
   type FindResult,
 } from "../editor/findReplace";
@@ -10,6 +11,7 @@ import type { EditorView } from "@milkdown/prose/view";
 import { useLocale, tFor } from "../i18n";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { Toggle } from "./Toggle";
+import { useClickOutside } from "../hooks/useClickOutside";
 
 export function FindReplace() {
   const open = useAppStore((s) => s.findReplaceOpen);
@@ -24,6 +26,7 @@ export function FindReplace() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const debounceRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputGroupRef = useRef<HTMLDivElement | null>(null);
   const locale = useLocale((s) => s.locale);
   const t = tFor(locale);
   useFocusTrap(containerRef, open);
@@ -33,6 +36,7 @@ export function FindReplace() {
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem("textora.searchHistory") || "[]"); } catch { return []; }
   });
+  useClickOutside(inputGroupRef, showHistory, () => setShowHistory(false));
 
   const saveSearchHistory = useCallback((q: string) => {
     if (!q.trim()) return;
@@ -44,9 +48,10 @@ export function FindReplace() {
     });
   }, []);
 
-  const isMarkdown =
-    getActiveTab(useAppStore.getState())?.kind === "markdown" &&
-    !useAppStore.getState().settings.sourceMode;
+  const isMarkdown = useAppStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    return tab?.kind === "markdown" && !s.settings.sourceMode;
+  });
 
   const getMdView = useCallback((): EditorView | null => {
     return (useAppStore.getState().editorView as EditorView | null) ?? null;
@@ -137,11 +142,13 @@ export function FindReplace() {
       }
       view.dispatch(tr);
       setTimeout(() => {
+        // 视图可能在异步期间被销毁（切换标签/源码模式），dispatch 会抛错
+        if (!view.dom || !view.dom.isConnected) return;
         const nm = findAllInDoc(view, query, { regex: useRegex, caseSensitive });
         setMatches(nm);
         setIndex(Math.min(index, Math.max(0, nm.length - 1)));
-        if (nm[Math.min(index, Math.max(0, nm.length - 1))])
-          selectMatch(view, nm[Math.min(index, Math.max(0, nm.length - 1))].from, nm[Math.min(index, Math.max(0, nm.length - 1))].to);
+        const target = nm[Math.min(index, Math.max(0, nm.length - 1))];
+        if (target) selectMatch(view, target.from, target.to);
       }, 0);
     } else {
       const api = getCodeApi();
@@ -162,12 +169,15 @@ export function FindReplace() {
     setShowHistory(false);
   };
 
-  const replaceAll = () => {
+  const replaceAll = async () => {
     if (isMarkdown) {
       const view = getMdView();
       if (!view) return;
-      replaceAllInDoc(view, query, replacement, { regex: useRegex, caseSensitive });
+      // 异步分片匹配：大文档 + 多匹配时不再同步占用主线程卡死界面
+      await replaceAllInDocAsync(view, query, replacement, { regex: useRegex, caseSensitive });
       setTimeout(() => {
+        // 视图可能在异步期间被销毁
+        if (!view.dom || !view.dom.isConnected) return;
         const nm = findAllInDoc(view, query, { regex: useRegex, caseSensitive });
         setMatches(nm);
         setIndex(0);
@@ -176,10 +186,10 @@ export function FindReplace() {
       const api = getCodeApi();
       if (!api) return;
       const all = api.getAllMatches(query, { regex: useRegex, caseSensitive });
-      // 从后往前替换，避免偏移
-      for (let i = all.length - 1; i >= 0; i--) {
-        api.replaceRange(all[i].from, all[i].to, replacement);
-      }
+      if (all.length === 0) return;
+      // 一次性本地拼装后单次 setText：循环内多次调用 setState 会被 React 批处理
+      // 覆盖（每次替换都基于旧文本），导致只有第一处替换生效（数据丢失 bug）。
+      api.setText(replaceAllInText(api.getText(), all, replacement));
       setTimeout(() => {
         const nm = api.getAllMatches(query, { regex: useRegex, caseSensitive });
         setMatches(nm);
@@ -190,8 +200,9 @@ export function FindReplace() {
 
   if (!open) return null;
   return (
-    <div ref={containerRef} className="absolute right-3 top-3 textora-card z-40" style={{ minWidth: 320 }}>
+    <div ref={containerRef} className="absolute right-3 top-3 textora-card textora-glass animate-slide-down rounded-xl shadow-xl z-40 border" style={{ minWidth: 320, borderColor: "var(--textora-border-glass)" }}>
       <div className="flex items-center gap-1 p-2 pb-0">
+        <div ref={inputGroupRef} className="relative flex-1">
         <input
           ref={inputRef}
           className="flex-1 px-2 py-1 border rounded bg-transparent text-xs"
@@ -201,7 +212,8 @@ export function FindReplace() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              e.shiftKey ? prev() : next();
+              if (e.shiftKey) prev();
+              else next();
             } else if (e.key === "Escape") {
               setOpen(false);
             }
@@ -212,13 +224,14 @@ export function FindReplace() {
             className="textora-card"
             style={{
               position: "absolute",
-              top: 36,
+              top: "100%",
               left: 0,
-              right: 50,
+              right: 0,
               zIndex: 70,
               maxHeight: 200,
               overflow: "auto",
               padding: "4px 0",
+              marginTop: 2,
             }}
           >
             {searchHistory.map((h, i) => (
@@ -236,6 +249,7 @@ export function FindReplace() {
             ))}
           </div>
         )}
+        </div>
         <button
           className="text-xs px-1 rounded hover:bg-[var(--textora-bg-muted)]"
           style={{ color: "var(--textora-fg-muted)" }}

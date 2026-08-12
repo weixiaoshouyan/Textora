@@ -18,19 +18,41 @@ export function Sidebar() {
   const locale = useLocale((s) => s.locale);
   const t = tFor(locale);
   const [tab, setTab] = useState<"files" | "outline">("files");
+  // latest-ref 模式：render 中写 ref 会被 react-hooks/refs 拦截，改为 effect 同步
+  const tabRef = useRef(tab);
+  useEffect(() => {
+    tabRef.current = tab;
+  }, [tab]);
+  // dragging 同时需要给事件回调（ref）和渲染（state）使用
+  const [dragging, setDragging] = useState(false);
   const draggingRef = useRef(false);
+  const onMoveRef = useRef<((e: MouseEvent) => void) | null>(null);
+  const onUpRef = useRef<((e: MouseEvent) => void) | null>(null);
 
   // outline 被关闭时，若当前停留在 outline 标签，自动切回 files，避免侧边栏空白
   useEffect(() => {
-    if (!outlineVisible && tab === "outline") {
+    if (!outlineVisible && tabRef.current === "outline") {
       setTab("files");
     }
-  }, [outlineVisible, tab]);
+  }, [outlineVisible]);
+
+  useEffect(() => {
+    return () => {
+      // 组件卸载时清理拖拽监听器
+      if (onMoveRef.current) {
+        document.removeEventListener("mousemove", onMoveRef.current);
+      }
+      if (onUpRef.current) {
+        document.removeEventListener("mouseup", onUpRef.current);
+      }
+    };
+  }, []);
 
   const onResizeStart = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       draggingRef.current = true;
+      setDragging(true);
       const startX = e.clientX;
       const startWidth = sidebarWidth;
       document.body.style.cursor = "col-resize";
@@ -44,11 +66,16 @@ export function Sidebar() {
       };
       const onUp = () => {
         draggingRef.current = false;
+        setDragging(false);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        onMoveRef.current = null;
+        onUpRef.current = null;
       };
+      onMoveRef.current = onMove;
+      onUpRef.current = onUp;
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     },
@@ -64,7 +91,7 @@ export function Sidebar() {
         background: "var(--textora-bg-elev)",
         borderColor: "var(--textora-border)",
         width: sidebarWidth,
-        transition: draggingRef.current ? "none" : "width 0.15s ease, opacity 0.15s ease",
+        transition: dragging ? "none" : "width 0.15s ease, opacity 0.15s ease",
       }}
     >
       <div

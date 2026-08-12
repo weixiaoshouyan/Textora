@@ -34,7 +34,10 @@ export function useSlashCommand(containerRef: React.RefObject<HTMLDivElement | n
   const locale = useLocale((s) => s.locale);
   const t = tFor(locale);
   const stateRef = useRef(state);
-  stateRef.current = state;
+  // latest-ref 模式：render 中写 ref 会被 react-hooks/refs 拦截，改为 effect 同步
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const items: SlashItem[] = [
     { key: "h1", label: t("slash.h1"), icon: "H1", insert: "# " },

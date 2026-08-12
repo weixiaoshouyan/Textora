@@ -98,9 +98,12 @@ export class MacroRecorder {
 export class MacroPlayer {
   private playing = false;
   private abortFlag = false;
+  private rafIds: number[] = [];
 
   stop(): void {
     this.abortFlag = true;
+    this.rafIds.forEach(id => cancelAnimationFrame(id));
+    this.rafIds = [];
   }
 
   isPlaying(): boolean {
@@ -131,23 +134,25 @@ export class MacroPlayer {
       const text = editor.getText();
       switch (action.type) {
         case "insert": {
-          const pos = action.from || text.length;
+          const pos = action.from ?? text.length;
           const newText = text.slice(0, pos) + (action.text || "") + text.slice(pos);
           editor.setText(newText);
-          requestAnimationFrame(() => editor.select(pos + (action.text || "").length, pos + (action.text || "").length));
+          const id = requestAnimationFrame(() => editor.select(pos + (action.text || "").length, pos + (action.text || "").length));
+          this.rafIds.push(id);
           break;
         }
         case "delete": {
-          const from = action.from || 0;
-          const to = action.to || from;
+          const from = action.from ?? 0;
+          const to = action.to ?? from;
           const newText = text.slice(0, from) + text.slice(to);
           editor.setText(newText);
-          requestAnimationFrame(() => editor.select(from, from));
+          const id = requestAnimationFrame(() => editor.select(from, from));
+          this.rafIds.push(id);
           break;
         }
         case "select":
         case "cursor": {
-          editor.select(action.from || 0, action.to || 0);
+          editor.select(action.from ?? 0, action.to ?? 0);
           break;
         }
       }

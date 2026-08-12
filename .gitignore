@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
@@ -8,7 +7,10 @@ pnpm-lock.yaml
 dist/
 release/
 out/
+asar-extracted/
 *.tsbuildinfo
+.audit-dist/
+
 
 # Editor
 .vscode/*
@@ -28,6 +30,16 @@ desktop.ini
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+stderr.txt
+stdout.txt
+
+
+# Test
+playwright-report/
+test-results/
+playwright/.cache/
+coverage/
+.vitest/
 
 # Env
 .env

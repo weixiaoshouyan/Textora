@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useAppStore, type CodeEditorApi } from "../store/useAppStore";
-import { codeToHtmlSafe, setShikiTheme } from "../plugins/shikiClient";
+import { codeToHtmlSafe, LARGE_FILE_THRESHOLD, setShikiTheme } from "../plugins/shikiClient";
+import { isDangerousRegex } from "../shared/safeRegex";
 import { ContextMenu } from "../ui/ContextMenu";
 import { buildEditorMenu } from "./editorContextMenu";
 import { lineOps } from "./lineOps";
@@ -144,7 +145,7 @@ const SNIPPETS: Record<string, { prefix: string; body: string }[]> = {
   python: [
     { prefix: "def", body: "def $1($2):\n    $0" },
     { prefix: "class", body: "class $1:\n    def __init__(self):\n        $0" },
-    { prefix: "ifmain", body: "if __name__ === \"__main__\":\n    $0" },
+    { prefix: "ifmain", body: "if __name__ == \"__main__\":\n    $0" },
     { prefix: "for", body: "for $1 in $2:\n    $0" },
     { prefix: "try", body: "try:\n    $1\nexcept $2:\n    $0" },
   ],
@@ -159,10 +160,12 @@ interface Props {
   content: string;
   language: string;
   onChange: (content: string) => void;
+  readOnly?: boolean;
 }
 
-export function CodeEditor({ content, language, onChange }: Props) {
-  const { settings } = useAppStore();
+export function CodeEditor({ content, language, onChange, readOnly = false }: Props) {
+  // 只订阅 settings，避免 content 等高频 state 变化导致整个组件重渲染
+  const settings = useAppStore((s) => s.settings);
   const themeMode = useAppStore((s) => s.theme);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -197,6 +200,7 @@ export function CodeEditor({ content, language, onChange }: Props) {
     } catch { setBookmarks([]); }
   }, [bmCurrentPath]);
 
+  // API 已通过下方 useMemo + useEffect 统一注册，此处无需重复注册
   useEffect(() => { loadBookmarks(); }, [loadBookmarks]);
   useEffect(() => {
     const handler = () => loadBookmarks();
@@ -216,6 +220,8 @@ export function CodeEditor({ content, language, onChange }: Props) {
     if (saved) setEdgeColumn(parseInt(saved, 10) || 0);
   }, []);
   const [highlightedHtml, setHighlightedHtml] = useState("");
+  // 文本区滚动位置（用于折叠遮罩层定位；大文件模式另有 virtualScrollTop）
+  const [scrollTop, setScrollTop] = useState(0);
 
   const lineHeight = 22;
   const baseFontSize = settings.fontSize - 1;
@@ -230,7 +236,7 @@ export function CodeEditor({ content, language, onChange }: Props) {
     for (const f of newFolds) { if (prev.has(f.startLine)) f.folded = prev.get(f.startLine)!; }
     foldsRef.current = newFolds;
     setFolds(newFolds);
-  }, [language]);
+  }, [language, content]);
 
   const toggleFold = useCallback((startLine: number) => {
     setFolds(prev => prev.map(f => {
@@ -243,7 +249,7 @@ export function CodeEditor({ content, language, onChange }: Props) {
     }));
   }, []);
 
-  const isLargeFile = content.split("\n").length > VIRTUAL_LINE_THRESHOLD;
+  const isLargeFile = content.length > LARGE_FILE_THRESHOLD || content.split("\n").length > VIRTUAL_LINE_THRESHOLD;
 
   const handleScroll = useCallback(() => {
     const el = textareaRef.current;
@@ -251,16 +257,30 @@ export function CodeEditor({ content, language, onChange }: Props) {
     const gutter = gutterRef.current;
     const indent = indentGuidesRef.current;
     if (!el) return;
+    setScrollTop(el.scrollTop);
     if (isLargeFile) {
       setVirtualScrollTop(el.scrollTop);
-    } else {
-      if (layer) { layer.scrollTop = el.scrollTop; layer.scrollLeft = el.scrollLeft; }
     }
+    // 大文件模式与普通模式都需要同步高亮层滚动位置
+    if (layer) { layer.scrollTop = el.scrollTop; layer.scrollLeft = el.scrollLeft; }
     if (gutter) gutter.scrollTop = el.scrollTop;
     if (indent) { indent.scrollTop = el.scrollTop; indent.scrollLeft = el.scrollLeft; }
-  }, [isLargeFile]);
+    // 滚动时同步更新当前行高亮位置
+    if (activeLineRef.current) {
+      const pos = el.selectionStart;
+      const line = el.value.slice(0, pos).split("\n").length - 1;
+      activeLineRef.current.style.top = (line * lineHeight + 12 - el.scrollTop) + "px";
+    }
+  }, [isLargeFile, lineHeight]);
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => { onChange(e.target.value); }, [onChange]);
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    // 折叠区外的编辑会使行号偏移、遮罩定位失效：编辑时自动展开所有折叠（安全优先）
+    if (foldsRef.current.some((f) => f.folded)) {
+      foldsRef.current = foldsRef.current.map((f) => ({ ...f, folded: false }));
+      setFolds((prev) => prev.map((f) => ({ ...f, folded: false })));
+    }
+    onChange(e.target.value);
+  }, [onChange]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -410,10 +430,11 @@ export function CodeEditor({ content, language, onChange }: Props) {
       let extra = "";
       if (prev === "{" || prev === ":" || prev === "(") extra = "    ";
       if (next === "}" && indent.endsWith("    ")) {
-        const trimmed = indent.slice(0, -4);
+        // 光标紧贴 } 前按 Enter：新行应保持当前缩进层级（indent），
+        // 而不是减 4 空格——否则在新行输入的内容会与所在代码块错位
         e.preventDefault();
-        onChange(v.slice(0, start) + "\n" + trimmed + v.slice(start));
-        requestAnimationFrame(() => { const np = start + 1 + trimmed.length; el.selectionStart = np; el.selectionEnd = np; });
+        onChange(v.slice(0, start) + "\n" + indent + v.slice(start));
+        requestAnimationFrame(() => { const np = start + 1 + indent.length; el.selectionStart = np; el.selectionEnd = np; });
         return;
       }
       e.preventDefault();
@@ -434,7 +455,7 @@ export function CodeEditor({ content, language, onChange }: Props) {
       if (key === "t") { e.preventDefault(); executeLineOperation("tabToSpace"); return; }
     }
     if (e.key === "Backspace" || e.key === "Delete") setShowAC(false);
-  }, [onChange, showAC, acItems, acIndex, triggerAC, applyAC]);
+  }, [onChange, showAC, acItems, acIndex, triggerAC, applyAC, executeLineOperation]);
 
   useEffect(() => { const t = setTimeout(() => setShowAC(false), 200); return () => clearTimeout(t); }, [content]);
 
@@ -448,23 +469,33 @@ export function CodeEditor({ content, language, onChange }: Props) {
     return { startLine, endLine, paddingTop: startLine * lineHeight };
   }, [isLargeFile, virtualScrollTop, content, lineHeight]);
 
-  // Gutter content
+  // Gutter content - 大文件时仅渲染可见范围
   const gutterLines = useMemo(() => {
     const lines = content.split("\n");
     const foldsByStart = new Map<number, FoldRange>();
     for (const f of folds) foldsByStart.set(f.startLine, f);
+
+    if (virtualVisibleRange) {
+      const visibleLines: { line: number; isFold: boolean; folded: boolean }[] = [];
+      for (let i = virtualVisibleRange.startLine; i < virtualVisibleRange.endLine; i++) {
+        const fold = foldsByStart.get(i);
+        visibleLines.push({ line: i, isFold: !!fold, folded: fold?.folded ?? false });
+      }
+      return visibleLines;
+    }
+
     return lines.map((_, i) => {
       const fold = foldsByStart.get(i);
       return { line: i, isFold: !!fold, folded: fold?.folded ?? false };
     });
-  }, [content, folds]);
+  }, [content, folds, virtualVisibleRange]);
 
   // Highlight
   useEffect(() => {
     let cancelled = false;
     if (!language || !content) { setHighlightedHtml(escapeHtml(content)); return; }
     const doHighlight = (text: string) => {
-      codeToHtmlSafe(text, language)
+      codeToHtmlSafe(text, language, { largeFile: isLargeFile })
         .then(h => { if (!cancelled) setHighlightedHtml(h); })
         .catch(() => { if (!cancelled) setHighlightedHtml(escapeHtml(text)); });
     };
@@ -476,7 +507,9 @@ export function CodeEditor({ content, language, onChange }: Props) {
       doHighlight(content);
     }
     return () => { cancelled = true; };
-  }, [content, language, virtualVisibleRange]);
+    // themeMode：主题切换（setShikiTheme 已在上方 effect 生效）后必须重新高亮，
+    // 否则源码高亮停留在旧主题配色
+  }, [content, language, virtualVisibleRange, isLargeFile, themeMode]);
 
   // Active line
   useEffect(() => {
@@ -485,7 +518,7 @@ export function CodeEditor({ content, language, onChange }: Props) {
       if (!el || !activeLineRef.current) return;
       const pos = el.selectionStart;
       const line = el.value.slice(0, pos).split("\n").length - 1;
-      activeLineRef.current.style.top = (line * lineHeight + 12) + "px";
+      activeLineRef.current.style.top = (line * lineHeight + 12 - el.scrollTop) + "px";
       activeLineRef.current.style.display = "block";
     };
     update();
@@ -493,16 +526,20 @@ export function CodeEditor({ content, language, onChange }: Props) {
     return () => document.removeEventListener("selectionchange", update);
   }, [lineHeight]);
 
-  // Indent guides
+  // Indent guides - 大文件时仅渲染可见范围
   const indentGuides = useMemo(() => {
     const lines = content.split("\n");
     const guides: { line: number; depth: number }[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^(\s*)/);
+
+    const startLine = virtualVisibleRange?.startLine ?? 0;
+    const endLine = virtualVisibleRange?.endLine ?? lines.length;
+
+    for (let i = startLine; i < endLine; i++) {
+      const m = lines[i]?.match(/^(\s*)/);
       if (m && m[1].length >= 4) guides.push({ line: i, depth: Math.floor(m[1].length / 4) });
     }
     return guides;
-  }, [content]);
+  }, [content, virtualVisibleRange]);
 
   // Bracket overlay
   const bracketOverlay = useMemo(() => {
@@ -514,16 +551,33 @@ export function CodeEditor({ content, language, onChange }: Props) {
     };
   }, [bracketPair, baseFontSize, lineHeight]);
 
+  // API 稳定化：通过 ref 读最新 content/onChange，避免每次击键重建 api
+  // （否则 setCodeEditorApi 每次触发 store 更新，FindReplace 等订阅方反复重渲染）
+  const contentRef = useRef(content);
+  contentRef.current = content;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   // API
   const api: CodeEditorApi = useMemo(() => ({
-    getText: () => content,
-    setText: (t: string) => onChange(t),
+    getText: () => contentRef.current,
+    setText: (t: string) => onChangeRef.current(t),
     getAllMatches: (query: string, opts: { regex: boolean; caseSensitive: boolean }) => {
       const matches: { from: number; to: number }[] = [];
       if (!query) return matches;
-      const text = content;
+      const text = contentRef.current;
       if (opts.regex) {
-        try { const re = new RegExp(query, opts.caseSensitive ? "g" : "gi"); let m: RegExpExecArray | null; while ((m = re.exec(text)) !== null) { matches.push({ from: m.index, to: m.index + m[0].length }); } } catch { /* */ }
+        // ReDoS 防护：危险正则在渲染进程主线程同步执行会卡死整个界面
+        if (isDangerousRegex(query)) return matches;
+        try {
+          const re = new RegExp(query, opts.caseSensitive ? "g" : "gi");
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(text)) !== null) {
+            matches.push({ from: m.index, to: m.index + m[0].length });
+            // 零长度匹配时手动推进 lastIndex，避免 exec 无限循环冻结界面
+            if (m.index === re.lastIndex) re.lastIndex++;
+          }
+        } catch { /* */ }
       } else {
         const step = query.length; const src = opts.caseSensitive ? text : text.toLowerCase(); const find = opts.caseSensitive ? query : query.toLowerCase();
         let idx = 0; while ((idx = src.indexOf(find, idx)) !== -1) { matches.push({ from: idx, to: idx + step }); idx += step; }
@@ -531,11 +585,18 @@ export function CodeEditor({ content, language, onChange }: Props) {
       return matches;
     },
     select: (from: number, to: number) => { const el = textareaRef.current; if (el) { el.focus(); el.setSelectionRange(from, to); updateBracketMatch(from); } },
-    replaceRange: (from: number, to: number, text: string) => { onChange(content.slice(0, from) + text + content.slice(to)); },
+    replaceRange: (from: number, to: number, text: string) => {
+      const c = contentRef.current;
+      onChangeRef.current(c.slice(0, from) + text + c.slice(to));
+    },
     focus: () => textareaRef.current?.focus(),
-  }), [content, onChange, updateBracketMatch]);
+  }), [updateBracketMatch]);
 
-  useEffect(() => { useAppStore.getState().setCodeEditorApi(api); return () => { useAppStore.getState().setCodeEditorApi(null); }; }, [api]);
+  useEffect(() => {
+    if (readOnly) return;
+    useAppStore.getState().setCodeEditorApi(api);
+    return () => { useAppStore.getState().setCodeEditorApi(null); };
+  }, [api, readOnly]);
 
   const handleSelect = useCallback(() => { const el = textareaRef.current; if (el) updateBracketMatch(el.selectionStart); }, [updateBracketMatch]);
 
@@ -543,16 +604,30 @@ export function CodeEditor({ content, language, onChange }: Props) {
   const lineCount = lines.length;
 
   return (
-    <div ref={rootRef} className="textora-code-root" style={{ height: "100%", background: "var(--textora-bg)", display: "flex", position: "relative" }} onWheel={handleWheel}>
+    <div ref={rootRef} className="textora-code-root" role={readOnly ? "region" : undefined} aria-label={readOnly ? "Read-only code preview" : undefined} style={{ height: "100%", overflow: readOnly ? "auto" : "hidden", background: "var(--textora-bg)", display: "flex", position: "relative" }} onWheel={handleWheel}>
       {/* Gutter */}
-      <div ref={gutterRef} className="textora-code-gutter" aria-hidden style={{ userSelect: "none", textAlign: "right", overflow: "hidden", flexShrink: 0 }}>
-        <div style={{ whiteSpace: "pre", padding: "12px 8px 12px 0", fontFamily: "ui-monospace, monospace", lineHeight: lineHeight + "px", fontSize: baseFontSize * zoom / 100, color: "var(--textora-fg-muted)" }}>
-          {gutterLines.map(g => {
-            const bm = bookmarks.some(b => b.line === g.line);
-            return (bm ? "●" : " ") + (g.isFold ? (g.folded ? "▶" : "▼") : " ") + String(g.line + 1).padStart(3, " ") + "\n";
-          })}
-      </div>
-        {gutterLines.filter(g => g.isFold).map(g => (
+      <div ref={gutterRef} className="textora-code-gutter" aria-hidden style={{ userSelect: "none", textAlign: "right", overflow: "hidden", flexShrink: 0, position: "relative" }}>
+        {virtualVisibleRange && (
+          <div style={{ position: "absolute", top: virtualVisibleRange.paddingTop, left: 0, right: 0 }}>
+            <div style={{ whiteSpace: "pre", padding: "12px 8px 12px 0", fontFamily: "ui-monospace, monospace", lineHeight: lineHeight + "px", fontSize: baseFontSize * zoom / 100, color: "var(--textora-fg-muted)" }}>
+              {gutterLines.map(g => {
+                const bm = bookmarks.some(b => b.line === g.line);
+                const pad = Math.max(3, String(lineCount).length);
+                return (bm ? "●" : " ") + (g.isFold ? (g.folded ? "▶" : "▼") : " ") + String(g.line + 1).padStart(pad, " ") + "\n";
+              })}
+            </div>
+          </div>
+        )}
+        {!virtualVisibleRange && (
+          <div style={{ whiteSpace: "pre", padding: "12px 8px 12px 0", fontFamily: "ui-monospace, monospace", lineHeight: lineHeight + "px", fontSize: baseFontSize * zoom / 100, color: "var(--textora-fg-muted)" }}>
+            {gutterLines.map(g => {
+              const bm = bookmarks.some(b => b.line === g.line);
+              const pad = Math.max(3, String(lineCount).length);
+              return (bm ? "●" : " ") + (g.isFold ? (g.folded ? "▶" : "▼") : " ") + String(g.line + 1).padStart(pad, " ") + "\n";
+            })}
+          </div>
+        )}
+        {!isLargeFile && gutterLines.filter(g => g.isFold).map(g => (
           <div
             key={"fold-" + g.line}
             onClick={(e) => { e.stopPropagation(); toggleFold(g.line); }}
@@ -576,15 +651,17 @@ export function CodeEditor({ content, language, onChange }: Props) {
 
       {/* Editor area */}
       <div style={{ position: "relative", flex: 1, overflow: "hidden" }}>
+        {readOnly && <div aria-hidden="true" style={{ minHeight: lineCount * lineHeight + 24, padding: "12px 16px", whiteSpace: "pre", fontFamily: "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace", fontSize: baseFontSize * zoom / 100, lineHeight: lineHeight + "px", visibility: "hidden" }}>{content}</div>}
         {/* Active line */}
         <div ref={activeLineRef} style={{ position: "absolute", left: 0, right: 0, height: lineHeight, background: "var(--textora-bg-muted)", opacity: 0.4, pointerEvents: "none", zIndex: 1 }} />
 
         {/* Indent guides */}
-        <div ref={indentGuidesRef} style={{ position: "absolute", inset: 0, padding: "12px 16px", pointerEvents: "none", overflow: "hidden", zIndex: 2 }}>
+        <div ref={indentGuidesRef} style={{ position: "absolute", inset: 0, padding: virtualVisibleRange ? (virtualVisibleRange.paddingTop + 12) + "px 16px 0 16px" : "12px 16px", pointerEvents: "none", overflow: "hidden", zIndex: 2 }}>
           {indentGuides.map((g, i) => {
             const cw = (baseFontSize - 1) * 0.6;
+            const topOffset = virtualVisibleRange ? g.line * lineHeight - virtualVisibleRange.startLine * lineHeight : g.line * lineHeight;
             return Array.from({ length: g.depth }, (_, d) => (
-              <div key={"gd-" + i + "-" + d} style={{ position: "absolute", top: g.line * lineHeight, left: (d + 1) * 4 * cw, width: "1px", height: lineHeight, borderLeft: "1px dotted var(--textora-border)" }} />
+              <div key={"gd-" + i + "-" + d} style={{ position: "absolute", top: topOffset, left: (d + 1) * 4 * cw, width: "1px", height: lineHeight, borderLeft: "1px dotted var(--textora-border)" }} />
             ));
           })}
         </div>
@@ -615,10 +692,39 @@ export function CodeEditor({ content, language, onChange }: Props) {
         )}
 
         {/* Syntax highlight */}
-        <div ref={highlightRef} className="textora-code-highlight" aria-hidden style={{ position: "absolute", inset: 0, padding: virtualVisibleRange ? virtualVisibleRange.paddingTop + "px 16px 0 16px" : "12px 16px", fontFamily: "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace", fontSize: baseFontSize * zoom / 100, lineHeight: lineHeight + "px", whiteSpace: "pre", overflow: isLargeFile ? "hidden" : "auto", pointerEvents: "none", color: "var(--textora-fg)", zIndex: 4 }} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        <div ref={highlightRef} className="textora-code-highlight" aria-hidden style={{ position: "absolute", inset: 0, padding: virtualVisibleRange ? (virtualVisibleRange.paddingTop + 12) + "px 16px 0 16px" : "12px 16px", fontFamily: "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace", fontSize: baseFontSize * zoom / 100, lineHeight: lineHeight + "px", whiteSpace: "pre", overflow: isLargeFile ? "hidden" : "auto", pointerEvents: "none", color: "var(--textora-fg)", zIndex: 4 }} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
 
-        {/* Textarea */}
-        <textarea ref={textareaRef} className="textora-code-textarea" value={content} onChange={handleChange} onKeyDown={handleKeyDown} onScroll={handleScroll} onSelect={handleSelect} spellCheck={settings.spellcheck} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", padding: "12px 16px", border: "none", outline: "none", resize: "none", background: "transparent", color: "transparent", caretColor: "var(--textora-fg)", fontFamily: "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace", fontSize: baseFontSize * zoom / 100, lineHeight: lineHeight + "px", whiteSpace: "pre", overflow: "auto", zIndex: 5 }} />
+        {/* 折叠遮罩层：真正隐藏折叠区（覆盖文本区对应行），点击展开。
+            大文件（虚拟滚动）模式不渲染，折叠箭头也已隐藏 */}
+        {!isLargeFile && folds.filter((f) => f.folded).map((f) => (
+          <div
+            key={"fold-overlay-" + f.startLine}
+            onClick={(e) => { e.stopPropagation(); toggleFold(f.startLine); }}
+            title="点击展开折叠"
+            style={{
+              position: "absolute",
+              left: 0, right: 0,
+              top: (f.startLine + 1) * lineHeight + 12 - scrollTop,
+              height: (f.endLine - f.startLine) * lineHeight,
+              background: "var(--textora-bg)",
+              borderTop: "1px solid var(--textora-border)",
+              borderBottom: "1px solid var(--textora-border)",
+              cursor: "pointer",
+              zIndex: 6,
+              display: "flex",
+              alignItems: "flex-start",
+              padding: "0 16px",
+              fontSize: 11,
+              color: "var(--textora-fg-muted)",
+              lineHeight: lineHeight + "px",
+            }}
+          >
+            <span style={{ userSelect: "none" }}>▶ {f.endLine - f.startLine} 行已折叠</span>
+          </div>
+        ))}
+
+        {/* Textarea is intentionally omitted from read-only clones so they do not expose an editable control. */}
+        {!readOnly && <textarea ref={textareaRef} className="textora-code-textarea" value={content} onChange={handleChange} onKeyDown={handleKeyDown} onScroll={handleScroll} onSelect={handleSelect} spellCheck={settings.spellcheck} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", padding: "12px 16px", border: "none", outline: "none", resize: "none", background: "transparent", color: "transparent", caretColor: "var(--textora-fg)", fontFamily: "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace", fontSize: baseFontSize * zoom / 100, lineHeight: lineHeight + "px", whiteSpace: "pre", overflow: "auto", zIndex: 5 }} />}
 
         {/* Autocomplete */}
         {showAC && acItems.length > 0 && (

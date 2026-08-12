@@ -127,7 +127,6 @@ async function decorateOne(pre: HTMLPreElement, view?: EditorView | null) {
   wrap.className = WRAP_CLASS;
   wrap.setAttribute("data-lang", lang);
   wrap.setAttribute("data-code-hash", hashCode(code));
-
   // 语言切换按钮+下拉框：位于右下角（Typora 风格）
   const langContainer = document.createElement("div");
   langContainer.className = "textora-code-lang-selector";
@@ -201,7 +200,9 @@ async function decorateOne(pre: HTMLPreElement, view?: EditorView | null) {
     e.preventDefault();
     e.stopPropagation();
     try {
-      await navigator.clipboard.writeText(code);
+      // 点击时从 DOM 实时读取代码，避免闭包捕获过期内容
+      const currentCode = pre.textContent || '';
+      await navigator.clipboard.writeText(currentCode);
       copyBtn.classList.add("copied");
       copyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="20 6 9 17 4 12"></polyline>
@@ -231,6 +232,13 @@ async function decorateOne(pre: HTMLPreElement, view?: EditorView | null) {
   wrap.appendChild(footer);
   pre.parentNode?.insertBefore(wrap, pre);
   const html = await codeToHtmlSafe(code, lang);
+  // 异步渲染期间可能发生：内容被用户继续编辑、语言被切换、或整块代码被删掉重插。
+  // 此时 pre 的 RENDER_ATTR 会被 collectAndDecorate 移除并重新触发装饰，
+  // 本帧结果属于过期快照，直接丢弃，避免把旧内容写回 DOM 覆盖新内容。
+  if (pre.getAttribute(RENDER_ATTR) !== "1") return;
+  if (!pre.isConnected) return;
+  if (getCodeFromPre(pre) !== code) return;
+  if (getLangFromPre(pre) !== lang) return;
   render.innerHTML = html;
   render
     .querySelector("pre")

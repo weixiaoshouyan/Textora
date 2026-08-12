@@ -3,6 +3,7 @@ import { useAppStore, getActiveTab } from "../store/useAppStore";
 import { useLocale, tFor } from "../i18n";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { SHORTCUTS, getBinding, formatBinding, loadCustomBindings } from "../hooks/shortcutSchema";
+import { exportAsHTML, exportAsPDF, exportAsPNG, exportAsDOCX } from "../editor/exporter";
 
 interface Command {
   id: string;
@@ -19,6 +20,7 @@ export function CommandPalette() {
 
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
+  const [bindingsVersion, setBindingsVersion] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -28,6 +30,7 @@ export function CommandPalette() {
     if (open) {
       setQuery("");
       setIndex(0);
+      setBindingsVersion(v => v + 1);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [open]);
@@ -81,6 +84,36 @@ export function CommandPalette() {
         run: () => s.setDiffViewOpen(true),
       },
       {
+        id: "graphView",
+        title: locale === "zh" ? "知识图谱关系图 (Graph View)" : "Knowledge Graph View",
+        run: () => s.setGraphViewOpen(true),
+      },
+      {
+        id: "toggleVimMode",
+        title: locale === "zh" ? "切换 Vim 模式 (Vim Mode)" : "Toggle Vim Mode",
+        run: () => s.toggleVimMode(),
+      },
+      {
+        id: "exportHTML",
+        title: locale === "zh" ? "导出为 HTML" : "Export to HTML",
+        run: () => void exportAsHTML(),
+      },
+      {
+        id: "exportPDF",
+        title: locale === "zh" ? "导出为 PDF" : "Export to PDF",
+        run: () => void exportAsPDF(),
+      },
+      {
+        id: "exportPNG",
+        title: locale === "zh" ? "导出为 PNG 图片" : "Export to PNG Image",
+        run: () => void exportAsPNG(),
+      },
+      {
+        id: "exportDOCX",
+        title: locale === "zh" ? "导出为 Word 兼容文档 (.doc)" : "Export to Word (.doc)",
+        run: () => void exportAsDOCX(),
+      },
+      {
         id: "closeTab",
         title: t("commandPalette.closeTab"),
         hint: sc("tabs.close"),
@@ -90,7 +123,7 @@ export function CommandPalette() {
         },
       },
     ];
-  }, [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [locale, bindingsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -116,6 +149,7 @@ export function CommandPalette() {
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      if (filtered.length === 0) return;
       setIndex((i) => Math.min(i + 1, filtered.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -131,12 +165,12 @@ export function CommandPalette() {
 
   return (
     <div
-      className="textora-overlay-backdrop"
+      className="textora-overlay-backdrop backdrop-blur-sm transition-opacity"
       onClick={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}
     >
-      <div ref={containerRef} className="textora-card textora-palette">
+      <div ref={containerRef} className="textora-card textora-palette textora-glass animate-pop-in rounded-xl overflow-hidden">
         <input
           ref={inputRef}
           className="textora-palette-input"

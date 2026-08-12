@@ -1,13 +1,10 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { useLocale, tFor } from "../i18n";
 
 export function Welcome() {
   const newFile = useAppStore((s) => s.newFile);
   const openFile = useAppStore((s) => s.openFile);
-  const recentFiles = useAppStore((s) => s.recentFiles);
-  const openPath = useAppStore((s) => s.openPath);
-  const checkBeforeOpen = useAppStore((s) => s.checkBeforeOpen);
   const locale = useLocale((s) => s.locale);
   const t = tFor(locale);
 
@@ -136,93 +133,6 @@ export function Welcome() {
         >
           {t("open")}
         </button>
-
-        {/* Recent files */}
-        {recentFiles.length > 0 && (
-          <div className="mt-10 text-left mx-auto" style={{ maxWidth: 420 }}>
-            <div
-              className="text-xs font-medium mb-3 uppercase"
-              style={{
-                color: "var(--textora-fg-muted)",
-                letterSpacing: "0.08em",
-              }}
-            >
-              {t("welcome.recent")}
-            </div>
-            <div
-              className="rounded-xl overflow-hidden"
-              style={{
-                border: "1px solid var(--textora-border)",
-                background: "var(--textora-bg-elev)",
-              }}
-            >
-              {recentFiles.map((r: { path: string; name: string }, i: number) => (
-                <button
-                  key={r.path}
-                  className="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors duration-100 cursor-pointer"
-                  style={{
-                    borderTop: i > 0 ? "1px solid var(--textora-border)" : "none",
-                    background: "transparent",
-                    borderLeft: "none",
-                    borderRight: "none",
-                    borderBottom: "none",
-                  }}
-                  onClick={async () => {
-                    const ok = await checkBeforeOpen(r.path);
-                    if (ok) void openPath(r.path);
-                  }}
-                  title={r.path}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background =
-                      "var(--textora-bg-muted)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background =
-                      "transparent";
-                  }}
-                >
-                  {/* File icon */}
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    style={{ flexShrink: 0 }}
-                  >
-                    <path
-                      d="M4 3h7l5 5v9a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1z"
-                      stroke="var(--textora-fg-muted)"
-                      strokeWidth="1.4"
-                      fill="none"
-                    />
-                    <path
-                      d="M11 3v5h5"
-                      stroke="var(--textora-fg-muted)"
-                      strokeWidth="1.4"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
-                  </svg>
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <span
-                      className="text-sm truncate"
-                      style={{ color: "var(--textora-fg)" }}
-                    >
-                      {r.name}
-                    </span>
-                    <span
-                      className="text-xs truncate"
-                      style={{ color: "var(--textora-fg-muted)", marginTop: 2 }}
-                    >
-                      {r.path}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

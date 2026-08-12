@@ -25,6 +25,9 @@ function getLineRange(text: string, startPos: number, endPos: number): { startLi
   for (let i = 0; i < lines.length; i++) {
     if (pos + lines[i].length >= endPos) { endLine = i; break; }
     pos += lines[i].length + 1;
+    // endPos 恰好落在本行末尾换行符之后（即下一行行首）时，
+    // 选区仍以本行结束，不应把下一行算进来
+    if (pos >= endPos) { endLine = i; break; }
     if (i === lines.length - 1) endLine = i;
   }
   while (endLine > startLine && !lines[endLine]) endLine--;

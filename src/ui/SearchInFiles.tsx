@@ -12,6 +12,11 @@ interface SearchHit {
   preview: string;
 }
 
+interface SearchResponse {
+  matches: SearchHit[];
+  truncated: boolean;
+}
+
 export function SearchInFiles() {
   const open = useAppStore((s) => s.searchInFilesOpen);
   const setOpen = useAppStore((s) => s.setSearchInFilesOpen);
@@ -23,31 +28,56 @@ export function SearchInFiles() {
   const [useRegex, setUseRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [hits, setHits] = useState<SearchHit[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [fileFilter, setFileFilter] = useState("");
-  const [excludeDirs, setExcludeDirs] = useState("node_modules,.git");
+  const [fileFilter] = useState("");
+  const [excludeDirs] = useState("node_modules,.git");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const debounceRef = useRef<number | null>(null);
+  // 请求序号：丢弃过期响应，防止快速输入时旧结果覆盖新结果
+  const searchSeqRef = useRef(0);
 
   useEffect(() => {
     if (open) {
+      searchSeqRef.current++;
       setQuery("");
       setHits([]);
+      setTruncated(false);
       setSearched(false);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [open]);
 
+  // 正则错误状态仅通过 setRegexError 写入，值本身不直接读取（保留历史接口）
+  const [, setRegexError] = useState(false);
+
   const runSearch = (q: string) => {
     if (!workspaceRoot || !q.trim()) {
       setHits([]);
+      setTruncated(false);
       setSearched(false);
+      setRegexError(false);
       return;
+    }
+    if (useRegex) {
+      try {
+        new RegExp(q);
+        setRegexError(false);
+      } catch {
+        setRegexError(true);
+        setHits([]);
+        setLoading(false);
+        setSearched(true);
+        return;
+      }
+    } else {
+      setRegexError(false);
     }
     setLoading(true);
     setSearched(true);
-    invoke<SearchHit[]>("search_in_files", {
+    const seq = ++searchSeqRef.current;
+    invoke<SearchResponse>("search_in_files", {
       root: workspaceRoot,
       query: q,
       useRegex,
@@ -56,9 +86,29 @@ export function SearchInFiles() {
       excludeDirs: excludeDirs.trim(),
       maxResults: 500,
     })
-      .then((list) => setHits(list))
-      .catch(() => setHits([]))
-      .finally(() => setLoading(false));
+      .then((response) => {
+        if (seq !== searchSeqRef.current) return;
+        // 对主进程返回的数据做空值兜底，避免渲染期抛错导致整页白屏
+        const matches = (response?.matches ?? []).map((m) => ({
+          path: m.path ?? "",
+          name: m.name ?? "",
+          line: m.line ?? 0,
+          column: m.column ?? 0,
+          preview: m.preview ?? "",
+        }));
+        setHits(matches);
+        setTruncated(!!response?.truncated);
+      })
+      .catch(() => {
+        if (seq !== searchSeqRef.current) return;
+        // 主进程拒绝（如危险正则 ReDoS 防护）时给出可见提示
+        setRegexError(true);
+        setHits([]);
+        setTruncated(false);
+      })
+      .finally(() => {
+        if (seq === searchSeqRef.current) setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -129,10 +179,10 @@ export function SearchInFiles() {
                   <span className="line-no">
                     {h.line}:{h.column}
                   </span>
-                  <span style={{ color: "var(--textora-fg)" }}>{h.preview.trim()}</span>
+                  <span style={{ color: "var(--textora-fg)" }}>{(h.preview || "").trim()}</span>
                 </div>
                 <div className="path">
-                  {h.path.split(/[\\/]/).slice(-2).join("/")}
+                  {h.path ? h.path.split(/[\\/]/).slice(-2).join("/") : ""}
                 </div>
               </div>
             ))}
@@ -142,8 +192,12 @@ export function SearchInFiles() {
             {t("search.resultCount").replace("{count}", String(hits.length))}
           </div>
         )}
+        {!loading && searched && truncated && (
+          <div className="px-3 py-1 text-xs" style={{ color: "var(--textora-fg-muted)" }}>
+            Results truncated for performance.
+          </div>
+        )}
       </div>
     </div>
   );
 }
-

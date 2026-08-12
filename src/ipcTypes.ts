@@ -42,6 +42,11 @@ export interface SearchMatch {
   preview: string;
 }
 
+export interface SearchResponse {
+  matches: SearchMatch[];
+  truncated: boolean;
+}
+
 export interface AllFileItem {
   name: string;
   path: string;
@@ -77,7 +82,7 @@ export interface IpcCommands {
 
   // 图片/二进制
   save_base64_file: { args: { dir: string; filename: string; data_base64: string }; result: string };
-  write_binary_file: { args: { path: string; bytes: number[] }; result: void };
+  write_binary_file: { args: { path: string; bytes: Uint8Array }; result: void };
   read_binary_file: { args: { path: string }; result: string };
   make_image_filename: { args: { ext: string }; result: string };
 
@@ -85,8 +90,10 @@ export interface IpcCommands {
   list_md_files: { args: { root: string }; result: MdFileItem[] };
   list_all_files: { args: { root: string }; result: AllFileItem[] };
   search_in_files: {
-    args: { root: string; query: string; use_regex: boolean; case_sensitive: boolean };
-    result: SearchMatch[];
+    // 注意：参数名必须与 ipc.ts CMD_ARGS["search_in_files"] 一致（camelCase），
+    // 否则 invoke 时 CMD_ARGS.map(name => args[name]) 会取不到值。
+    args: { root: string; query: string; useRegex: boolean; caseSensitive: boolean; fileFilter?: string; excludeDirs?: string };
+    result: SearchResponse;
   };
 
   // 导出
@@ -102,7 +109,28 @@ export interface IpcCommands {
   get_app_version: { args: Record<string, never>; result: string };
   get_system_locale: { args: Record<string, never>; result: string };
   get_log_path: { args: Record<string, never>; result: string };
+  get_recent_lines: { args: { lines?: number }; result: string };
+  get_system_info: {
+    args: Record<string, never>;
+    result: {
+      appVersion: string;
+      electronVersion: string;
+      chromiumVersion: string;
+      platform: string;
+      osRelease: string;
+      arch: string;
+      cpuCount: number;
+      cpuModel: string;
+      totalMemoryGB: number;
+      freeMemoryGB: number;
+      uptime: number;
+    };
+  };
   open_file_location: { args: { path: string }; result: void };
+
+  // AI 扩展工具
+  run_tool: { args: { tool: ServerToolInput; vars: Record<string, string> }; result: ToolExecutionResult };
+  fetch_url: { args: { url: string }; result: string };
 }
 
 /** 类型安全的 invoke 函数签名 */
@@ -110,3 +138,22 @@ export type TypedInvoke = <K extends keyof IpcCommands>(
   cmd: K,
   args?: IpcCommands[K]["args"]
 ) => Promise<IpcCommands[K]["result"]>;
+
+/** 外部工具输入（与 main/ipc/tools.ts 保持一致） */
+export interface ServerToolInput {
+  id?: string;
+  name?: string;
+  command: string;
+  args?: string[];
+  cwd?: string;
+}
+
+/** 外部工具执行结果 */
+export interface ToolExecutionResult {
+  toolId: string;
+  toolName: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  duration: number;
+}

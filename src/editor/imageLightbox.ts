@@ -20,6 +20,7 @@ let dragStartX = 0;
 let dragStartY = 0;
 let dragStartTX = 0;
 let dragStartTY = 0;
+let onKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 function applyTransform() {
   if (lightboxImg) {
@@ -36,9 +37,17 @@ function resetView() {
 
 function closeLightbox() {
   if (lightboxEl) {
+    // 关闭时移除 window 级监听器，避免每次开关叠加导致内存泄漏
+    window.removeEventListener("mousemove", onWindowMouseMove);
+    window.removeEventListener("mouseup", onWindowMouseUp);
+    if (onKeyHandler) {
+      window.removeEventListener("keydown", onKeyHandler);
+      onKeyHandler = null;
+    }
     lightboxEl.remove();
     lightboxEl = null;
     lightboxImg = null;
+    isDragging = false;
   }
 }
 
@@ -122,13 +131,12 @@ function ensureLightbox(): { el: HTMLDivElement; img: HTMLImageElement } {
   });
   window.addEventListener("mousemove", onWindowMouseMove);
   window.addEventListener("mouseup", onWindowMouseUp);
-  const onKey = (e: KeyboardEvent) => {
+  onKeyHandler = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       closeLightbox();
-      window.removeEventListener("keydown", onKey);
     }
   };
-  window.addEventListener("keydown", onKey);
+  window.addEventListener("keydown", onKeyHandler);
 
   document.body.appendChild(el);
   lightboxEl = el;

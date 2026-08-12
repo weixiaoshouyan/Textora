@@ -15,6 +15,9 @@
   --textora-accent-fg: #ffffff;
   --textora-code-bg: #f6f8fa;
   --textora-shadow: 0 1px 3px rgba(31, 35, 40, 0.06);
+  --textora-bg-glass: rgba(255, 255, 255, 0.85);
+  --textora-border-glass: rgba(208, 215, 222, 0.6);
+  --textora-glass-shadow: 0 12px 32px rgba(31, 35, 40, 0.12), 0 2px 6px rgba(31, 35, 40, 0.04);
 
   --milkdown-theme-bg: #ffffff;
   --milkdown-theme-text: #1f2328;
@@ -43,6 +46,9 @@
   --textora-accent-fg: #0d1117;
   --textora-code-bg: #161b22;
   --textora-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --textora-bg-glass: rgba(22, 27, 34, 0.85);
+  --textora-border-glass: rgba(240, 246, 252, 0.12);
+  --textora-glass-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.3);
 
   --milkdown-theme-bg: #0d1117;
   --milkdown-theme-text: #e6edf3;
@@ -72,6 +78,9 @@
   --textora-accent-fg: #f9f2dc;
   --textora-code-bg: #ece2c4;
   --textora-shadow: 0 1px 3px rgba(91, 70, 54, 0.15);
+  --textora-bg-glass: rgba(244, 236, 216, 0.88);
+  --textora-border-glass: rgba(201, 181, 142, 0.6);
+  --textora-glass-shadow: 0 12px 32px rgba(91, 70, 54, 0.15), 0 2px 6px rgba(91, 70, 54, 0.05);
 
   --milkdown-theme-bg: #f4ecd8;
   --milkdown-theme-text: #5b4636;
@@ -101,6 +110,9 @@
   --textora-accent-fg: #2e3440;
   --textora-code-bg: #3b4252;
   --textora-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --textora-bg-glass: rgba(46, 52, 64, 0.88);
+  --textora-border-glass: rgba(76, 86, 106, 0.6);
+  --textora-glass-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.25);
 
   --milkdown-theme-bg: #2e3440;
   --milkdown-theme-text: #eceff4;
@@ -140,6 +152,15 @@ body,
   border-radius: 6px;
   box-shadow: var(--textora-shadow);
 }
+
+.textora-glass {
+  background: var(--textora-bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--textora-border-glass);
+  box-shadow: var(--textora-glass-shadow);
+}
+
 
 .textora-btn {
   display: inline-flex;
@@ -1133,4 +1154,67 @@ input,
   overflow-x: auto !important;
   border: none !important;
   background: transparent !important;
+}
+
+/* ===================== 现代毛玻璃与微动效扩展 ===================== */
+.textora-glass {
+  background-color: var(--textora-bg-glass);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid var(--textora-border-glass);
+  box-shadow: var(--textora-glass-shadow);
+}
+
+@keyframes textoraPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-pop-in {
+  animation: textoraPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes textoraSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-down {
+  animation: textoraSlideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ===================== 专注模式平滑平移与 Zen 光标 ===================== */
+main, sidebar, .textora-topbar, .textora-statusbar {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.milkdown .ProseMirror-focused {
+  caret-color: var(--textora-accent);
+}
+
+.textora-wikilink {
+  color: var(--textora-accent);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--textora-bg-muted);
+  transition: background 0.15s;
+}
+
+.textora-wikilink:hover {
+  background: var(--textora-border);
 }

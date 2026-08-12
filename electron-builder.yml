@@ -6,9 +6,32 @@ directories:
 files:
   - dist/**/*
   - package.json
+  - "!dist/**/*.map"
+asar: true
+# 关键：把 iconv-lite 解包出 asar，因为它内部用动态 require 加载编码表数据
+asarUnpack:
+  - node_modules/iconv-lite/**
+  - node_modules/@shikijs/engine-oniguruma/**
+  - "**/*.wasm"
 win:
   target: nsis
-  icon: resources/icon.ico
+  icon: resources/ico.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+mac:
+  target:
+    - dmg
+  category: public.app-category.productivity
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+# 自动更新发布配置：默认注释掉占位的 GitHub 仓库，避免打包产物指向不存在的 repo。
+# 启用自动更新前，取消注释并把 owner/repo 改成真实仓库，或改用 generic provider 指向自己的更新服务器。
+# 不配置 publish 时不会生成 app-update.yml，主进程会自动跳过更新检查。
+# publish:
+#   - provider: github
+#     owner: textora
+#     repo: textora

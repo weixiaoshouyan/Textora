@@ -11,6 +11,7 @@
  */
 import { Plugin, PluginKey } from "@milkdown/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/prose/view";
+import { isLargeDoc } from "./docGuard";
 import { $prose } from "@milkdown/utils";
 
 interface PluginState {
@@ -34,24 +35,38 @@ function loadMermaid(): Promise<MermaidMod> {
   return mermaidModPromise;
 }
 
+let initPromise: Promise<void> | null = null;
+
 async function ensureMermaid(theme: "light" | "dark") {
   const mod = await loadMermaid();
   if (!mermaidInited || theme !== currentTheme) {
-    mod.default.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: theme === "dark" ? "dark" : "default",
-      fontFamily: "inherit",
-    });
-    mermaidInited = true;
-    currentTheme = theme;
+    // 串行化 initialize 调用，避免并发竞态
+    if (!initPromise) {
+      initPromise = (async () => {
+        mod.default.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: theme === "dark" ? "dark" : "default",
+          fontFamily: "inherit",
+        });
+        mermaidInited = true;
+        currentTheme = theme;
+      })();
+    }
+    await initPromise;
+    initPromise = null;
+    // 如果在等待期间主题又变了，重新初始化
+    if (theme !== currentTheme) {
+      return ensureMermaid(theme);
+    }
   }
   return mod;
 }
 
 export async function setMermaidTheme(theme: "light" | "dark") {
-  // 主题切换：使所有进行中的异步渲染结果失效
+  // 主题切换：使所有进行中的异步渲染结果失效，并清空渲染缓存
   renderGeneration++;
+  mermaidRenderCache.clear();
   await ensureMermaid(theme);
 }
 
@@ -76,6 +91,12 @@ function findMermaidBlocks(
 
 let idCounter = 0;
 
+// 渲染缓存：key 为 `${generation}-${pos}`，值记录代码哈希与渲染结果。
+// 文档中其他位置打字触发 docChanged 时会重建所有图表 widget；
+// 内容未变的图表直接复用缓存，避免昂贵的 mermaid.render 每次都全量执行。
+const mermaidRenderCache = new Map<string, { hash: string; html: string }>();
+const MERMAID_CACHE_MAX = 200;
+
 export const mermaidPlugin = $prose(() => {
   return new Plugin<PluginState>({
     key: mermaidKey,
@@ -85,6 +106,9 @@ export const mermaidPlugin = $prose(() => {
         const meta = tr.getMeta(mermaidKey);
         const bump = meta && typeof meta.bump === "number" ? meta.bump : prev.bump;
         if (!tr.docChanged && bump === prev.bump) return prev;
+        // 大文档降级：输入（docChanged 且非 bump）时跳过全量重建，
+        // 装饰位置由 ProseMirror 自动 mapping 跟随，内容在 bump 时刷新
+        if (tr.docChanged && bump === prev.bump && isLargeDoc(tr.doc)) return prev;
 
         const blocks = findMermaidBlocks(tr.doc);
         const decos: Decoration[] = [];
@@ -92,10 +116,20 @@ export const mermaidPlugin = $prose(() => {
         const genSnapshot = renderGeneration;
         for (let i = 0; i < blocks.length; i++) {
           const b = blocks[i];
+          const code = b.code.trim();
+          const cacheKey = `${genSnapshot}-${b.pos}`;
+          const cached = mermaidRenderCache.get(cacheKey);
+          if (cached && cached.hash === code) {
+            // 代码未变化：直接复用上次渲染结果，跳过昂贵的异步 mermaid.render
+            const wrapper = document.createElement("div");
+            wrapper.className = "textora-mermaid";
+            wrapper.innerHTML = cached.html;
+            decos.push((Decoration as any).replace(b.pos, b.to, { widget: wrapper }));
+            continue;
+          }
           const wrapper = document.createElement("div");
           wrapper.className = "textora-mermaid";
           wrapper.setAttribute("data-mermaid", "pending");
-          const code = b.code.trim();
           wrapper.textContent = code;
           // 唯一 id，避免重复
           const id = `mermaid-${genSnapshot}-${idCounter++}`;
@@ -115,13 +149,19 @@ export const mermaidPlugin = $prose(() => {
               if (!wrapper.isConnected) return;
               wrapper.innerHTML = svg;
               wrapper.removeAttribute("data-mermaid");
+              // 写入渲染缓存；超过上限时清空防止无限增长
+              if (mermaidRenderCache.size >= MERMAID_CACHE_MAX) {
+                mermaidRenderCache.clear();
+              }
+              mermaidRenderCache.set(cacheKey, { hash: code, html: svg });
             } catch (e) {
               if (genSnapshot !== renderGeneration) return;
               if (!wrapper.isConnected) return;
-              wrapper.innerHTML = `<div class="textora-mermaid-error">图表渲染失败: ${(e as Error).message}</div><pre>${code
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")}</pre>`;
+              // 错误消息来自 mermaid 解析器，可能包含输入内容的片段——
+              // 必须转义后再注入 innerHTML，否则恶意代码块可执行任意 JS（XSS）
+              const escapeHtml = (s: string) =>
+                s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              wrapper.innerHTML = `<div class="textora-mermaid-error">图表渲染失败: ${escapeHtml((e as Error).message)}</div><pre>${escapeHtml(code)}</pre>`;
               wrapper.removeAttribute("data-mermaid");
             }
           })();

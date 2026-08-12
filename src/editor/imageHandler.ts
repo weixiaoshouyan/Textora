@@ -28,14 +28,29 @@ function dataUrlToBase64(dataUrl: string): { mime: string; base64: string; ext: 
   if (isBase64) {
     return { mime, base64: data, ext };
   }
-  // 非 base64 data URL：用 TextEncoder 转码（替代废弃的 unescape）
-  const bytes = new TextEncoder().encode(data);
+  // 非 base64 data URL：内容是百分号编码的原始字节流。
+  // 不能用 TextEncoder（会把 %20 等当字面量），也需避免 decodeURIComponent
+  // 对非 UTF-8 二进制做错误解码，这里手动按字节 percent-decode。
+  const bytes: number[] = [];
+  for (let i = 0; i < data.length; i++) {
+    const c = data[i];
+    if (c === "%" && i + 2 < data.length) {
+      const code = parseInt(data.slice(i + 1, i + 3), 16);
+      if (!Number.isNaN(code)) {
+        bytes.push(code);
+        i += 2;
+        continue;
+      }
+    }
+    bytes.push(data.charCodeAt(i) & 0xff);
+  }
+  if (!bytes.length) return null;
   let binary = "";
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) {
     binary += String.fromCharCode.apply(
       null,
-      Array.from(bytes.subarray(i, i + chunk))
+      bytes.slice(i, i + chunk)
     );
   }
   return { mime, base64: btoa(binary), ext };
@@ -76,8 +91,8 @@ export function insertMarkdownAtCursor(md: string) {
   // 但 ProseMirror 不会自动重新解析，所以这里退而求其次：
   // 在选区插入字面文本，并通过 setTimeout 触发 replaceAll 重新解析整个文档。
   const textType = state.schema.text;
-  if (textType) {
-    const textNode = (textType as any).create(md);
+  if (typeof textType === 'function') {
+    const textNode = state.schema.text(md);
     const paraType = state.schema.nodes.paragraph;
     if (paraType) {
       const para = paraType.create(null, textNode);
@@ -149,8 +164,19 @@ function toRelative(root: string, abs: string): string {
  * 解析 File 对象为 base64，存到 assets/，并插入 Markdown。
  * 既能用于拖拽，也能用于剪贴板粘贴。
  */
+// 与主进程 FILE_SIZE_LIMITS.IMAGE_MAX_SIZE 保持一致：超过限制的图片在读取到
+// 渲染层内存之前就拒绝（否则先读入几百 MB 再被主进程拒绝，白占内存）
+const IMAGE_MAX_SIZE = 50 * 1024 * 1024;
+
 export async function ingestImageFile(file: File, alt?: string) {
   try {
+    if (file.size > IMAGE_MAX_SIZE) {
+      await message(`图片超过 50MB 限制，已忽略：${file.name}`, {
+        title: "图片处理失败",
+        kind: "error",
+      });
+      return null;
+    }
     const buf = await file.arrayBuffer();
     let binary = "";
     const bytes = new Uint8Array(buf);
@@ -198,8 +224,10 @@ export function attachImageHandlers(view: EditorView) {
     const files = imageItems
       .map((it) => it.getAsFile())
       .filter((f): f is File => !!f);
-    // 并行处理所有图片
-    await Promise.all(files.map((f) => ingestImageFile(f)));
+    // 逐张串行处理：并行读取多张大图会瞬间占满内存（每张先整读再 base64）
+    for (const f of files) {
+      await ingestImageFile(f);
+    }
   };
 
   // 拖拽：多图并行处理
@@ -208,7 +236,10 @@ export function attachImageHandlers(view: EditorView) {
     const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
     if (!files.length) return;
     e.preventDefault();
-    await Promise.all(files.map((f) => ingestImageFile(f)));
+    // 逐张串行处理：同上，避免多图并行读入撑爆内存
+    for (const f of files) {
+      await ingestImageFile(f);
+    }
   };
 
   const onDragOver = (e: DragEvent) => {

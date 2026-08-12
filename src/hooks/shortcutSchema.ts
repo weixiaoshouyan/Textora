@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 快捷键配置系统：
  *  - 定义所有可用快捷键及其默认绑定
  *  - 支持用户自定义绑定（存储在 localStorage）
@@ -20,7 +20,7 @@ export interface ShortcutDef {
   /** i18n 文案 key */
   descriptionKey: string;
   /** 分类 */
-  category: "file" | "edit" | "view" | "tabs";
+  category: "file" | "edit" | "view" | "tabs" | "app";
   /** 是否在输入框内也允许触发 */
   allowInInput: boolean;
   /** 是否过滤 e.repeat（避免长按连续触发） */
@@ -230,11 +230,21 @@ export const SHORTCUTS: ShortcutDef[] = [
   },
   {
     id: "macro.play",
-    defaultBinding: "mod+shift+p",
+    // 与 edit.commandPalette 的 mod+shift+p 冲突，改用 mod+shift+m
+    defaultBinding: "mod+shift+m",
     descriptionKey: "sc.macroPlay",
     category: "edit",
     allowInInput: false,
     repeatGuard: false,
+  },
+  // 应用
+  {
+    id: "app.openSettings",
+    defaultBinding: "mod+comma",
+    descriptionKey: "menu.settings",
+    category: "app",
+    allowInInput: true,
+    repeatGuard: true,
   },
 ];
 

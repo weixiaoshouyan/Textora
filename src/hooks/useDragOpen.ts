@@ -25,10 +25,10 @@ export function useDragOpen() {
     };
 
     const isDirectory = async (path: string): Promise<boolean> => {
+      // 用专门的 is_directory IPC 明确判断，避免依赖 list_dir 的副作用
+      // （list_dir 对文件路径返回空数组而非抛错，导致误判为目录）
       try {
-        // 用 list_dir 探测：目录可列出，文件会报错
-        await invoke("list_dir", { path });
-        return true;
+        return await invoke<boolean>("is_directory", { path });
       } catch {
         return false;
       }
@@ -53,8 +53,8 @@ export function useDragOpen() {
 
       // 逐个处理拖入项
       for (const file of files) {
-        // Tauri 中 File 对象有 path 属性（扩展）
-        const path = (file as any).path as string | undefined;
+        // Electron 30+ 移除了 File.path，必须通过 preload 暴露的 webUtils.getPathForFile 取路径
+        const path = window.textora?.getPathForFile(file);
         if (!path) continue;
 
         const dir = await isDirectory(path);

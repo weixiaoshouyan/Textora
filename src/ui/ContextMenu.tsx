@@ -61,10 +61,9 @@ export function ContextMenu({ x, y, items, onClose, level = 0 }: Props) {
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
-        className="rounded shadow-lg border py-1 min-w-[180px]"
+        className="rounded-xl textora-glass animate-pop-in shadow-2xl border py-1 min-w-[180px]"
         style={{
-          background: "var(--textora-bg-elev, var(--textora-bg))",
-          borderColor: "var(--textora-border)",
+          borderColor: "var(--textora-border-glass)",
           fontSize: 13,
         }}
       >

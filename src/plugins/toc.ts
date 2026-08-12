@@ -6,6 +6,7 @@
  */
 import { Plugin, PluginKey } from "@milkdown/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/prose/view";
+import { isLargeDoc } from "./docGuard";
 import { $prose } from "@milkdown/utils";
 
 interface PluginState {
@@ -13,7 +14,7 @@ interface PluginState {
   bump: number;
 }
 
-export const tocKey = new PluginKey<PluginState>("textora-toc");
+const tocKey = new PluginKey<PluginState>("textora-toc");
 
 const TOC_RE = /^\s*\[TOC\]\s*$/i;
 
@@ -99,6 +100,8 @@ export const tocPlugin = $prose(() => {
         const meta = tr.getMeta(tocKey);
         const bump = meta && typeof meta.bump === "number" ? meta.bump : prev.bump;
         if (!tr.docChanged && bump === prev.bump) return prev;
+        // 大文档降级：输入（docChanged 且非 bump）时跳过全量重建
+        if (tr.docChanged && bump === prev.bump && isLargeDoc(tr.doc)) return prev;
 
         const blocks = findTocBlocks(tr.doc);
         if (blocks.length === 0) {

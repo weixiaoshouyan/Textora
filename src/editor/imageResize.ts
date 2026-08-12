@@ -20,6 +20,7 @@ let activeImg: HTMLImageElement | null = null;
 let viewRef: EditorView | null = null;
 let resizing = false;
 let justResized = false;
+let justResizedTimer: ReturnType<typeof setTimeout> | null = null;
 let startX = 0;
 let startY = 0;
 let startWidth = 0;
@@ -117,8 +118,10 @@ function onMouseUp() {
     commitToProseMirror();
   }
   // 在下一个事件循环清除标志，避免拖拽后紧接的 click 误移除句柄
-  setTimeout(() => {
+  if (justResizedTimer) clearTimeout(justResizedTimer);
+  justResizedTimer = setTimeout(() => {
     justResized = false;
+    justResizedTimer = null;
   }, 0);
 }
 
@@ -214,6 +217,7 @@ export function attachImageResize(view: EditorView): () => void {
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("mousemove", onMouseMove);
     window.removeEventListener("mouseup", onMouseUp);
+    if (justResizedTimer) clearTimeout(justResizedTimer);
     removeHandle();
     viewRef = null;
   };

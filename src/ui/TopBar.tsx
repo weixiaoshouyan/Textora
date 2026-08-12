@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, forwardRef, useMemo } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { exportAsHTML, exportAsPDF, exportAsDOCX, exportAsPNG } from "../editor/exporter";
+import { openDialog } from "../ipc";
 import { useLocale, tFor } from "../i18n";
 import { SHORTCUTS, getBinding, formatBinding, loadCustomBindings } from "../hooks/shortcutSchema";
 
@@ -17,8 +18,6 @@ export function TopBar() {
   const setSettingsPanelOpen = useAppStore((s) => s.setSettingsPanelOpen);
   const setFindReplaceOpen = useAppStore((s) => s.setFindReplaceOpen);
   const setAiAssistantOpen = useAppStore((s) => s.setAiAssistantOpen);
-  const toggleSplitView = useAppStore((s) => s.toggleSplitView);
-  const splitViewOpen = useAppStore((s) => s.splitViewOpen);
   const setQuickOpenOpen = useAppStore((s) => s.setQuickOpenOpen);
 
   const locale = useLocale((s) => s.locale);
@@ -32,7 +31,8 @@ export function TopBar() {
       labels[def.id] = formatBinding(getBinding(def, custom));
     }
     return labels;
-    // settingsPanelOpen 变化时重新计算（面板关闭后绑定可能已更新）
+    // settingsPanelOpen 变化时重新计算（面板关闭后绑定可能已更新）——有意的依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsPanelOpen]);
 
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
@@ -75,6 +75,18 @@ export function TopBar() {
         >
           <DropdownItem label={t("new")} shortcut={scLabels["file.new"]} onClick={() => { setFileMenuOpen(false); newFile(); }} />
           <DropdownItem label={t("open")} shortcut={scLabels["file.open"]} onClick={() => { setFileMenuOpen(false); void openFile(); }} />
+          <DropdownItem
+            label={t("menu.openFolder")}
+            onClick={() => {
+              setFileMenuOpen(false);
+              void (async () => {
+                const dir = await openDialog({ directory: true, multiple: false });
+                if (typeof dir === "string") {
+                  await useAppStore.getState().openWorkspace(dir);
+                }
+              })();
+            }}
+          />
           <DropdownItem label={t("save")} shortcut={scLabels["file.save"]} onClick={() => { setFileMenuOpen(false); void saveFile(); }} />
           <DropdownItem label={t("saveAs")} shortcut={scLabels["file.saveAs"]} onClick={() => { setFileMenuOpen(false); void useAppStore.getState().saveFileAs(); }} />
           <DropdownDivider />
@@ -84,6 +96,12 @@ export function TopBar() {
           <DropdownItem label={t("export.png")} onClick={() => { setFileMenuOpen(false); void exportAsPNG(); }} />
           <DropdownDivider />
           <DropdownItem label={t("diff.compareFiles")} onClick={() => { setFileMenuOpen(false); useAppStore.getState().setDiffViewOpen(true); }} />
+          <DropdownDivider />
+          <DropdownItem
+            label={t("menu.settings")}
+            shortcut={scLabels["app.openSettings"]}
+            onClick={() => { setFileMenuOpen(false); setSettingsPanelOpen(true); }}
+          />
         </MenuBarItem>
         <MenuBarItem
           label={t("menu.view")}
@@ -170,13 +188,6 @@ export function TopBar() {
           ariaLabel={t("settings.ai")}
         >
           <AiIcon />
-        </IconButton>
-        <IconButton
-          onClick={() => setSettingsPanelOpen(true)}
-          title={t("settings")}
-          ariaLabel={t("settings")}
-        >
-          <GearIcon />
         </IconButton>
       </div>
     </header>
@@ -328,15 +339,6 @@ function CommandIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z" />
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }

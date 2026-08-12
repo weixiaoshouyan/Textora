@@ -1,0 +1,90 @@
+# Dependabot 配置
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  # npm 依赖更新
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "dependabot"
+    labels:
+      - "dependencies"
+      - "automated"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # 忽略 major 版本更新（需要手动审查）
+    ignore:
+      - dependency-name: "electron"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@milkdown/*"
+        update-types: ["version-update:semver-major"]
+    # 分组相关依赖，减少 PR 数量
+    groups:
+      # React 生态
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      # Milkdown 编辑器
+      milkdown:
+        patterns:
+          - "@milkdown/*"
+      # Shiki 语法高亮
+      shiki:
+        patterns:
+          - "shiki"
+          - "@shikijs/*"
+      # TypeScript 和构建工具
+      build-tools:
+        patterns:
+          - "typescript"
+          - "vite"
+          - "@vitejs/*"
+          - "tailwindcss"
+          - "autoprefixer"
+          - "postcss"
+      # 测试工具
+      testing:
+        patterns:
+          - "vitest"
+          - "@playwright/test"
+          - "jsdom"
+      # Electron 生态
+      electron:
+        patterns:
+          - "electron"
+          - "electron-builder"
+          - "@electron/*"
+          - "electron-log"
+          - "electron-updater"
+
+  # GitHub Actions 更新
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    labels:
+      - "ci"
+      - "automated"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "actions/*"

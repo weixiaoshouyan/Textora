@@ -16,8 +16,18 @@ export function Toggle({
 }) {
   return (
     <button
+      type="button"
       title={title}
       onClick={onClick}
+      role="switch"
+      aria-checked={active}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       className="text-xs px-1.5 py-0.5 rounded"
       style={{
         border: "1px solid var(--textora-border)",

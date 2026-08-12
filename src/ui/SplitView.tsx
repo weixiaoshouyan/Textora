@@ -23,29 +23,53 @@ export function SplitView() {
   // Synced content for right pane
   const [syncedContent, setSyncedContent] = useState(content);
 
+  // 当外部 content 变化（AI 插入、文件重载、撤销/重做等）时同步到右视图
+  useEffect(() => {
+    setSyncedContent(content);
+  }, [content]);
+
   // Update synced content when left pane changes
   const handleLeftChange = useCallback((newContent: string) => {
     setContent(newContent);
     setSyncedContent(newContent);
   }, [setContent]);
 
-  // Sync scroll between panes
-  const syncScroll = useCallback((source: "left" | "right") => {
+  // Sync scroll between panes。
+  // 注意：Milkdown（.ProseMirror）与 CodeEditor（textarea）的滚动发生在各自内部元素上，
+  // 且 scroll 事件不冒泡——必须用捕获阶段监听容器，并定位 pane 内实际滚动元素。
+  const findScrollable = useCallback((pane: HTMLElement): HTMLElement => {
+    const ta = pane.querySelector<HTMLElement>(".textora-code-textarea");
+    if (ta) return ta;
+    const pm = pane.querySelector<HTMLElement>(".ProseMirror");
+    if (pm) return pm;
+    return pane;
+  }, []);
+
+  const syncScrollFrom = useCallback((srcEl: HTMLElement, dstPane: HTMLElement) => {
     if (syncingRef.current) return;
     syncingRef.current = true;
-
-    const srcRef = source === "left" ? leftRef : rightRef;
-    const dstRef = source === "left" ? rightRef : leftRef;
-    const srcEl = srcRef.current;
-    const dstEl = dstRef.current;
-
-    if (srcEl && dstEl && srcEl.scrollHeight > srcEl.clientHeight) {
+    const dstEl = findScrollable(dstPane);
+    if (srcEl.scrollHeight > srcEl.clientHeight) {
       const ratio = srcEl.scrollTop / (srcEl.scrollHeight - srcEl.clientHeight);
       dstEl.scrollTop = ratio * (dstEl.scrollHeight - dstEl.clientHeight);
     }
-
     requestAnimationFrame(() => { syncingRef.current = false; });
-  }, []);
+  }, [findScrollable]);
+
+  // 捕获阶段监听：scroll 不冒泡，捕获能收到任意子元素（textarea/ProseMirror）的滚动
+  useEffect(() => {
+    const left = leftRef.current;
+    const right = rightRef.current;
+    if (!left || !right) return;
+    const onLeft = () => syncScrollFrom(findScrollable(left), right);
+    const onRight = () => syncScrollFrom(findScrollable(right), left);
+    left.addEventListener("scroll", onLeft, true);
+    right.addEventListener("scroll", onRight, true);
+    return () => {
+      left.removeEventListener("scroll", onLeft, true);
+      right.removeEventListener("scroll", onRight, true);
+    };
+  }, [findScrollable, syncScrollFrom]);
 
   if (!tab) return null;
 
@@ -57,13 +81,12 @@ export function SplitView() {
       <div
         ref={leftRef}
         className="flex-1 min-w-0 overflow-auto"
-        onScroll={() => syncScroll("left")}
         style={{ borderRight: "1px solid var(--textora-border)" }}
       >
         {isMarkdown ? (
-          <MilkdownEditor content={content} onChange={handleLeftChange} />
+          <MilkdownEditor key={tab.id + "-left"} content={content} onChange={handleLeftChange} />
         ) : (
-          <CodeEditor content={content} language={tab.language} onChange={handleLeftChange} />
+          <CodeEditor key={tab.id + "-left"} content={content} language={tab.language} onChange={handleLeftChange} />
         )}
       </div>
 
@@ -71,12 +94,11 @@ export function SplitView() {
       <div
         ref={rightRef}
         className="flex-1 min-w-0 overflow-auto"
-        onScroll={() => syncScroll("right")}
       >
         {isMarkdown ? (
-          <MilkdownEditor content={syncedContent} onChange={() => {}} />
+          <MilkdownEditor key={tab.id + "-right"} content={syncedContent} onChange={() => {}} readOnly />
         ) : (
-          <CodeEditor content={syncedContent} language={tab.language} onChange={() => {}} />
+          <CodeEditor key={tab.id + "-right"} content={syncedContent} language={tab.language} onChange={() => {}} readOnly />
         )}
       </div>
     </div>

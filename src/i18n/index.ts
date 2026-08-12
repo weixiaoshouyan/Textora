@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import { emit, getSystemLocale } from "../ipc";
 
 const zh: Record<string, string> = {
@@ -14,6 +14,9 @@ const zh: Record<string, string> = {
   "menu.close": "关闭",
   "menu.closeOthers": "关闭其他",
   "menu.closeAll": "关闭全部",
+  "menu.settings": "设置…",
+  "menu.openFolder": "打开文件夹…",
+  "menu.closeFolder": "关闭文件夹",
 
   // basic ops
   "new": "新建",
@@ -32,7 +35,6 @@ const zh: Record<string, string> = {
 
   // welcome
   "welcome.subtitle": "所见即所得的 Markdown 编辑器",
-  "welcome.recent": "最近打开",
 
   // settings
   "settings.title": "首选项",
@@ -69,6 +71,7 @@ const zh: Record<string, string> = {
   "unsaved.title": "未保存的修改",
   "unsaved.message": "「{name}」有未保存的修改，关闭前要保存吗？",
   "unsaved.openMessage": "「{name}」有未保存的修改，打开「{name2}」前要保存吗？",
+  "unsaved.workspaceCloseMsg": "有 {count} 个文件有未保存的修改，关闭前要保存吗？",
   "unsaved.save": "保存",
   "unsaved.discard": "不保存",
   "unsaved.cancel": "取消",
@@ -140,6 +143,7 @@ const zh: Record<string, string> = {
   "sc.category.edit": "编辑",
   "sc.category.view": "视图",
   "sc.category.tabs": "标签",
+  "sc.category.app": "应用",
   "sc.newFile": "新建文件",
   "sc.openFile": "打开文件",
   "sc.openFolder": "打开文件夹",
@@ -286,6 +290,7 @@ const zh: Record<string, string> = {
   "dialog.largeFileMsg": "此文件大小为 {size}，编辑时可能会卡顿。建议仅查看或使用源码模式。",
   "dialog.deleteTitle": "删除",
   "dialog.deleteConfirm": "确定删除 {name} 吗？",
+  "dialog.deleteConfirmDirty": "文件 {name} 在编辑器中还有未保存的修改，删除文件将丢失这些修改。确定删除吗？",
   "dialog.readDirFailed": "读取目录失败",
   "dialog.watchFailed": "监听失败",
   "dialog.fileChangedTitle": "文件已变更",
@@ -312,6 +317,21 @@ const zh: Record<string, string> = {
   "ai.action.ideas.prompt": "请围绕这篇文档的主题，提供几个有深度的写作角度与可落地的思路、可能的论据或案例方向。",
   "ai.action.continue.prompt": "请基于文档现有内容，自然地续写接下来的 1–2 段，保持原有语气与风格。",
   "ai.action.polish.prompt": "请润色并改进这篇文档（保持原意与 Markdown 格式，提升表达与逻辑）。",
+  "ai.toolConfirm.writeTitle": "AI 请求写入文件",
+  "ai.toolConfirm.runTitle": "AI 请求执行命令",
+  "ai.toolConfirm.allow": "允许",
+  "ai.toolConfirm.deny": "拒绝",
+  "ai.toolConfirm.writeMessage": "AI 助手请求将内容写入：\n{path}",
+  "ai.toolConfirm.runMessage": "AI 助手请求执行命令：\n{command}",
+  "ai.newChat": "新对话",
+  "ai.history": "历史记录",
+  "ai.model": "模型",
+  "ai.selectModel": "选择模型",
+  "ai.projectDir": "项目目录",
+  "ai.browse": "浏览",
+  "ai.noProviders": "未配置任何服务商，请在设置中添加",
+  "ai.configured": "已配置",
+  "ai.addProvider": "添加服务商",
 
   // settings - ai
   "settings.ai": "AI 助手",
@@ -322,6 +342,48 @@ const zh: Record<string, string> = {
   "settings.ai.enabled": "启用 AI 助手",
   "settings.ai.open": "打开 AI 助手",
   "settings.ai.hint": "配置仅保存在本机，不会上传。",
+  "settings.ai.quickSetup": "一键配置国产 AI 服务",
+  "settings.ai.quickSetup.hint": "选择服务商并填入 API Key 即可完成配置。",
+  "settings.ai.testConnection": "测试连接",
+  "settings.ai.testing": "测试中…",
+  "settings.ai.testSuccess": "连接成功",
+  "settings.ai.testFailed": "连接失败",
+  "settings.ai.setActive": "设为默认",
+  "settings.ai.active": "默认使用",
+  "settings.ai.addCustom": "添加自定义供应商",
+  "settings.ai.noProviders": "尚未配置任何 AI 供应商",
+  "settings.ai.delete": "删除",
+  "settings.ai.expand": "展开",
+  "settings.ai.collapse": "收起",
+  "settings.ai.showKey": "显示",
+  "settings.ai.hideKey": "隐藏",
+  "settings.ai.alias": "别名",
+  "settings.ai.preset": "预设模板",
+  "settings.ai.customProviders": "我的供应商",
+  "settings.ai.quickSetup.apply": "一键应用",
+  "settings.ai.quickSetup.getKey": "获取 API Key",
+  "settings.ai.quickSetup.success": "配置已应用",
+  "settings.ai.model.select": "选择模型",
+  "settings.ai.noProvidersHint": "使用上方一键配置快速添加，或从预设模板中选择。",
+  "settings.ai.multiProvider": "多服务商管理",
+  "settings.ai.add": "添加",
+
+  // settings - categories (left nav)
+  "settings.category.general": "通用",
+  "settings.category.editor": "编辑器",
+  "settings.category.view": "视图",
+  "settings.category.ai": "AI 助手",
+  "settings.category.shortcuts": "快捷键",
+  "settings.category.about": "关于",
+
+  // settings - about
+  "settings.about.version": "版本",
+  "settings.about.description": "所见即所得的 Markdown 编辑器",
+  "settings.about.checkUpdate": "检查更新",
+  "settings.about.openLog": "打开日志",
+  "settings.about.author": "作者",
+  "settings.about.license": "许可证",
+  "settings.about.repo": "GitHub 仓库",
 
   // tab
   "tab.dirty": "未保存",
@@ -329,6 +391,28 @@ const zh: Record<string, string> = {
   "sc.toggleBookmark": "切换书签",
   "sc.nextBookmark": "下一个书签",
   "sc.prevBookmark": "上一个书签",
+  "sc.clearBookmarks": "清空所有书签",
+  "sc.macroRecord": "录制/停止宏",
+  "sc.macroPlay": "播放宏",
+
+  // error codes
+  "error.INVALID_PATH": "路径无效，请检查路径格式",
+  "error.WORKSPACE_NOT_SET": "工作区未设置，请先打开一个文件夹",
+  "error.WORKSPACE_ESCAPE": "无法访问工作区外的文件",
+  "error.SYMLINK_ESCAPE": "符号链接指向工作区外部",
+  "error.NOT_DIRECTORY": "指定路径不是目录",
+  "error.SIZE_LIMIT": "文件超过大小限制",
+  "error.INVALID_ARGUMENT": "参数无效",
+  "error.TOOL_BLOCKED": "该命令出于安全原因被阻止",
+  "error.TOOL_TIMEOUT": "命令执行超时",
+  "error.FETCH_BLOCKED": "该 URL 因安全原因无法访问",
+  "error.FETCH_TIMEOUT": "网络请求超时",
+  "error.FETCH_FAILED": "网络请求失败",
+  "error.WRITE_FAILED": "文件写入失败",
+  "error.READ_FAILED": "文件读取失败",
+  "error.FILE_LOCKED": "文件已被其他程序锁定",
+  "error.UNSUPPORTED_ENCODING": "不支持的编码格式",
+  "error.ENCODING_DETECTION_FAILED": "编码检测失败",
 };
 
 const en: Record<string, string> = {
@@ -344,6 +428,9 @@ const en: Record<string, string> = {
   "menu.close": "Close",
   "menu.closeOthers": "Close Others",
   "menu.closeAll": "Close All",
+  "menu.settings": "Settings…",
+  "menu.openFolder": "Open Folder…",
+  "menu.closeFolder": "Close Folder",
 
   // basic ops
   "new": "New",
@@ -362,7 +449,6 @@ const en: Record<string, string> = {
 
   // welcome
   "welcome.subtitle": "WYSIWYG Markdown Editor",
-  "welcome.recent": "Recent",
 
   // settings
   "settings.title": "Preferences",
@@ -394,9 +480,12 @@ const en: Record<string, string> = {
   "settings.shortcuts.conflict": "\"{name}\" already uses that shortcut",
 
   // unsaved confirm
+  "splitView": "Split View",
+  "sc.toggleSplit": "Toggle Split View",
   "unsaved.title": "Unsaved Changes",
   "unsaved.message": "\"{name}\" has unsaved changes. Save before closing?",
   "unsaved.openMessage": "\"{name}\" has unsaved changes. Save before opening \"{name2}\"?",
+  "unsaved.workspaceCloseMsg": "There are {count} files with unsaved changes. Save before closing?",
   "unsaved.save": "Save",
   "unsaved.discard": "Discard",
   "unsaved.cancel": "Cancel",
@@ -468,6 +557,7 @@ const en: Record<string, string> = {
   "sc.category.edit": "Edit",
   "sc.category.view": "View",
   "sc.category.tabs": "Tabs",
+  "sc.category.app": "App",
   "sc.newFile": "New File",
   "sc.openFile": "Open File",
   "sc.openFolder": "Open Folder",
@@ -614,6 +704,7 @@ const en: Record<string, string> = {
   "dialog.largeFileMsg": "This file is {size}. Editing may be slow. Consider view-only or source mode.",
   "dialog.deleteTitle": "Delete",
   "dialog.deleteConfirm": "Delete {name}?",
+  "dialog.deleteConfirmDirty": "{name} has unsaved changes in the editor. Deleting the file will lose them. Delete anyway?",
   "dialog.readDirFailed": "Read Dir Failed",
   "dialog.watchFailed": "Watch Failed",
   "dialog.fileChangedTitle": "File Changed",
@@ -640,6 +731,12 @@ const en: Record<string, string> = {
   "ai.action.ideas.prompt": "Please suggest several deep writing angles and actionable ideas, possible arguments or case directions, around this document's topic.",
   "ai.action.continue.prompt": "Please naturally continue writing the next 1–2 paragraphs based on the existing content, keeping the original tone and style.",
   "ai.action.polish.prompt": "Please polish and improve this document (keep the original meaning and Markdown format, enhance expression and logic).",
+  "ai.toolConfirm.writeTitle": "AI requests to write a file",
+  "ai.toolConfirm.runTitle": "AI requests to run a command",
+  "ai.toolConfirm.allow": "Allow",
+  "ai.toolConfirm.deny": "Deny",
+  "ai.toolConfirm.writeMessage": "The AI assistant wants to write to:\n{path}",
+  "ai.toolConfirm.runMessage": "The AI assistant wants to run:\n{command}",
 
   // settings - ai
   "settings.ai": "AI Assistant",
@@ -650,6 +747,46 @@ const en: Record<string, string> = {
   "settings.ai.enabled": "Enable AI Assistant",
   "settings.ai.open": "Open AI Assistant",
   "settings.ai.hint": "Config is stored locally only and never uploaded.",
+  "settings.ai.quickSetup": "Quick Setup for Domestic AI Services",
+  "settings.ai.quickSetup.hint": "Pick a provider, paste your API Key, and you're good to go.",
+  "settings.ai.testConnection": "Test Connection",
+  "settings.ai.testing": "Testing…",
+  "settings.ai.testSuccess": "Connected",
+  "settings.ai.testFailed": "Failed",
+  "settings.ai.setActive": "Set as Default",
+  "settings.ai.active": "Default",
+  "settings.ai.addCustom": "Add Custom Provider",
+  "settings.ai.noProviders": "No AI providers configured yet",
+  "settings.ai.delete": "Delete",
+  "settings.ai.expand": "Expand",
+  "settings.ai.collapse": "Collapse",
+  "settings.ai.showKey": "Show",
+  "settings.ai.hideKey": "Hide",
+  "settings.ai.alias": "Alias",
+  "settings.ai.preset": "Preset Template",
+  "settings.ai.customProviders": "My Providers",
+  "settings.ai.quickSetup.apply": "Apply",
+  "settings.ai.quickSetup.getKey": "Get API Key",
+  "settings.ai.quickSetup.success": "Configuration applied",
+  "settings.ai.model.select": "Select Model",
+  "settings.ai.noProvidersHint": "Use the quick setup above, or pick from preset templates.",
+
+  // settings - categories (left nav)
+  "settings.category.general": "General",
+  "settings.category.editor": "Editor",
+  "settings.category.view": "View",
+  "settings.category.ai": "AI Assistant",
+  "settings.category.shortcuts": "Shortcuts",
+  "settings.category.about": "About",
+
+  // settings - about
+  "settings.about.version": "Version",
+  "settings.about.description": "WYSIWYG Markdown Editor",
+  "settings.about.checkUpdate": "Check for Updates",
+  "settings.about.openLog": "Open Log",
+  "settings.about.author": "Author",
+  "settings.about.license": "License",
+  "settings.about.repo": "GitHub Repository",
 
   // tab
   "tab.dirty": "Unsaved",
@@ -672,7 +809,25 @@ const en: Record<string, string> = {
   "ai.addProvider": "Add Provider",
   "settings.ai.multiProvider": "Multi-Provider Management",
   "settings.ai.add": "Add",
-  "settings.ai.delete": "Delete",
+
+  // error codes
+  "error.INVALID_PATH": "Invalid path, please check the path format",
+  "error.WORKSPACE_NOT_SET": "Workspace not set, please open a folder first",
+  "error.WORKSPACE_ESCAPE": "Cannot access files outside workspace",
+  "error.SYMLINK_ESCAPE": "Symlink points outside workspace",
+  "error.NOT_DIRECTORY": "The specified path is not a directory",
+  "error.SIZE_LIMIT": "File exceeds size limit",
+  "error.INVALID_ARGUMENT": "Invalid argument",
+  "error.TOOL_BLOCKED": "Command blocked for security reasons",
+  "error.TOOL_TIMEOUT": "Command execution timed out",
+  "error.FETCH_BLOCKED": "URL cannot be accessed for security reasons",
+  "error.FETCH_TIMEOUT": "Network request timed out",
+  "error.FETCH_FAILED": "Network request failed",
+  "error.WRITE_FAILED": "File write failed",
+  "error.READ_FAILED": "File read failed",
+  "error.FILE_LOCKED": "File is locked by another program",
+  "error.UNSUPPORTED_ENCODING": "Unsupported encoding",
+  "error.ENCODING_DETECTION_FAILED": "Encoding detection failed",
 };
 
 export type Locale = "zh" | "en";
@@ -681,9 +836,36 @@ export function getMessages(locale: Locale) {
   return locale === "zh" ? zh : en;
 }
 
-export function t(key: string, locale: Locale): string {
+const warnedKeys = new Set<string>();
+
+export function t(key: string, locale: Locale, params?: Record<string, string | number>): string {
   const messages = getMessages(locale);
-  return messages[key] ?? key;
+  let value: string;
+  if (messages[key] !== undefined) {
+    value = messages[key];
+  } else {
+    // Fallback to other locale
+    const fallback = getMessages(locale === 'zh' ? 'en' : 'zh');
+    if (fallback[key] !== undefined) {
+      value = fallback[key];
+    } else {
+      if (typeof console !== 'undefined') {
+        // 去重：同一个缺失 key 只警告一次，避免刷屏
+        if (!warnedKeys.has(key)) {
+          warnedKeys.add(key);
+          console.warn(`[i18n] Missing translation for key: "${key}"`);
+        }
+      }
+      return key;
+    }
+  }
+  // 替换占位符 {name} {count} 等
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      value = value.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+    }
+  }
+  return value;
 }
 
 // ---- zustand-based locale store ----
@@ -693,22 +875,23 @@ interface LocaleState {
   setLocale: (l: Locale) => void;
 }
 
+const LOCALE_STORAGE_KEY = 'textora-locale';
+
 /** 根据 Electron app.getLocale() 结果匹配支持的语言 */
 function detectSystemLocale(): Locale {
   try {
-    // 在渲染进程通过 IPC 获取
-    // 注意：此函数需在 store 创建前调用，但 IPC 需运行时执行
-    // 因此先用 "zh" 占位，再异步检测
-    return "zh";
-  } catch {
-    return "zh";
-  }
+    // 优先使用用户上次选择的语言
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(LOCALE_STORAGE_KEY) : null;
+    if (saved === 'zh' || saved === 'en') return saved;
+  } catch {}
+  return 'zh';
 }
 
 export const useLocale = create<LocaleState>((set) => ({
   locale: detectSystemLocale(),
   setLocale: (l) => {
     set({ locale: l });
+    try { localStorage.setItem(LOCALE_STORAGE_KEY, l); } catch {}
     // 通知主进程重建原生菜单
     void emit("set-locale", l);
   },
@@ -717,6 +900,10 @@ export const useLocale = create<LocaleState>((set) => ({
 /** 应用启动时异步检测系统语言并应用（需窗口创建后 IPC 可用时调用） */
 export async function initSystemLocale(): Promise<void> {
   try {
+    // 如果用户已手动选择过语言，不覆盖
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(LOCALE_STORAGE_KEY) : null;
+    if (saved === 'zh' || saved === 'en') return;
+
     const sysLocale = await getSystemLocale();
     const normalized: Locale = sysLocale.toLowerCase().startsWith("zh") ? "zh" : "en";
     useLocale.getState().setLocale(normalized);

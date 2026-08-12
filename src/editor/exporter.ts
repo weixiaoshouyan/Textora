@@ -12,27 +12,9 @@
  */
 import { invoke, saveDialog, message } from "../ipc";
 import { useAppStore } from "../store/useAppStore";
+import { sanitizeHtml as sanitizeHtmlDom } from "./htmlSanitizer";
 
-/**
- * 净化 HTML：移除可能执行脚本的危险标签/属性。
- * 在导出 innerHTML 内容前调用，防止 Markdown 中嵌入的恶意 HTML 被一并导出。
- */
-function sanitizeHtml(html: string): string {
-  let s = html;
-  // 移除 <script> 及其内容
-  s = s.replace(/<script[\s\S]*?<\/script>/gi, "");
-  // 移除 <iframe> <object> <embed> <style> 及其内容
-  s = s.replace(/<(iframe|object|embed|style|link|meta|base|form)[\s\S]*?<\/\1>/gi, "");
-  // 移除危险自闭合标签，但保留 img/br/hr
-  s = s.replace(/<(iframe|object|embed|link|meta|base|form|input|button|select|textarea|video|audio|source|svg)[^>]*\/?>/gi, "");
-  // 移除 on* 事件处理器属性
-  s = s.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, "");
-  // 移除 javascript: 危险协议
-  s = s.replace(/(href|src|action|formaction)\s*=\s*(?:"javascript[^"]*"|'javascript[^']*'|javascript:[^\s>]*)/gi, '$1="#"');
-  // 移除 data:text/html 危险协议（保留 data:image/*）
-  s = s.replace(/(href|src|action|formaction)\s*=\s*(?:"data:text\/html[^"]*"|'data:text\/html[^']*'|data:text\/html[^\s>]*)/gi, '$1="#"');
-  return s;
-}
+export const sanitizeHtml = sanitizeHtmlDom;
 
 // ============== 共享 CSS ==============
 const BASE_CSS = `
@@ -86,7 +68,7 @@ body {
 async function getRenderedHtml(): Promise<string> {
   const editor = document.querySelector(".milkdown .ProseMirror") as HTMLElement | null;
   if (editor && editor.children.length > 0) {
-    let html = sanitizeHtml(editor.innerHTML);
+    let html = sanitizeHtmlDom(editor.innerHTML);
     // 内联相对路径图片为 base64
     html = await inlineImages(html);
     return html;
@@ -100,7 +82,7 @@ async function getRenderedHtml(): Promise<string> {
     const Transformer = (transformerMod as any).Transformer;
     const transformer = Transformer.utilityStr(commonmark, gfm);
     const doc = transformer(raw);
-    let html = sanitizeHtml(transformer.nodeToHTML(doc));
+    let html = sanitizeHtmlDom(transformer.nodeToHTML(doc));
     html = await inlineImages(html);
     return html;
   } catch {
@@ -120,11 +102,11 @@ async function getRenderedHtml(): Promise<string> {
 async function inlineImages(html: string): Promise<string> {
   const ws = useAppStore.getState().workspaceRoot;
   if (!ws) return html;
-  const imgRe = /<img[^>]+src="([^"]+)"[^>]*>/g;
+  const imgRe = /<img[^>]*\bsrc=(["'])([^"']+)\1[^>]*>/gi;
   const matches: Array<{ src: string; full: string }> = [];
   let m: RegExpExecArray | null;
   while ((m = imgRe.exec(html)) !== null) {
-    const src = m[1];
+    const src = m[2];
     if (/^(https?:|data:)/i.test(src)) continue;
     matches.push({ src, full: m[0] });
   }
@@ -135,26 +117,26 @@ async function inlineImages(html: string): Promise<string> {
     /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
   const norm = (s: string) => s.replace(/\\/g, "/");
   const normWs = norm(ws).replace(/\/$/, "");
+  // 手动解析相对路径（含 ./ 与 ../ 上溯），展开为不含 .. 的绝对路径。
+  // 主进程 validateWorkspacePath 会拒绝含 .. 段的路径，直接拼接会导致 ../ 图片导出失败
+  const resolveRel = (rel: string): string => {
+    const base = normWs.split("/");
+    for (const seg of rel.split("/")) {
+      if (seg === "..") base.pop();
+      else if (seg === "." || seg === "") continue;
+      else base.push(seg);
+    }
+    return base.join("/");
+  };
   const results = await Promise.all(
     matches.map(async ({ src, full }) => {
       try {
         // 解析相对路径为绝对路径；绝对路径（含非 C: 盘符 / UNC）原样保留
-        const absPath = isAbsolute(src) ? src : `${normWs}/${norm(src)}`;
+        const normSrc = norm(src);
+        const absPath = isAbsolute(src) ? (normSrc.startsWith("/") ? normSrc : src) : resolveRel(normSrc);
         // 读取文件并转 base64
-        const bytes = await invoke<number[]>("read_binary_file", { path: absPath });
-        const u8 = new Uint8Array(bytes);
-        let binary = "";
-        const chunk = 0x8000;
-        for (let i = 0; i < u8.length; i += chunk) {
-          binary += String.fromCharCode.apply(
-            null,
-            Array.from(u8.subarray(i, i + chunk))
-          );
-        }
-        const base64 = btoa(binary);
-        const ext = (src.split(".").pop() || "png").toLowerCase();
-        const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
-        const dataUrl = `data:${mime};base64,${base64}`;
+        const encoded = await invoke<string>("read_binary_file", { path: absPath });
+        const dataUrl = inlineImageSource(src, encoded);
         return { full, src, dataUrl };
       } catch {
         return null;
@@ -164,10 +146,19 @@ async function inlineImages(html: string): Promise<string> {
   let result = html;
   for (const r of results) {
     if (r) {
-      result = result.replace(r.full, r.full.replace(r.src, r.dataUrl));
+      // 使用 split/join 替换所有出现，避免 String.replace 仅替换首个；
+      // 内层用函数形式替换避免 $&/$1 等特殊字符解释
+      const replacedFull = r.full.split(r.src).join(r.dataUrl);
+      result = result.split(r.full).join(replacedFull);
     }
   }
   return result;
+}
+
+export function inlineImageSource(src: string, base64: string): string {
+  const ext = (src.split(/[?#]/)[0].split(".").pop() || "png").toLowerCase();
+  const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
+  return `data:${mime};base64,${base64}`;
 }
 
 function titleFromPath(path: string | null) {

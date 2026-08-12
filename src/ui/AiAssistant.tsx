@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore, type ChatSession } from "../store/useAppStore";
 import { chat, type ChatMessage } from "../ai/aiService";
-import { getActiveProvider, getTemplate, type ProviderConfig } from "../ai/config";
+import { confirmAiToolCall } from "../ai/confirmToolCall";
 import { useLocale, tFor } from "../i18n";
 import { openDialog } from "../ipc";
 
@@ -47,16 +47,12 @@ export function AiAssistant() {
   const locale = useLocale((s) => s.locale);
   const t = tFor(locale);
   const content = useAppStore((s) => s.content);
-  const setContent = useAppStore((s) => s.setContent);
   const workspaceRoot = useAppStore((s) => s.workspaceRoot);
   
   // AI 配置
   const providers = useAppStore((s) => s.aiProviders);
   const activeProviderId = useAppStore((s) => s.aiActiveProviderId);
   const setAiActiveProvider = useAppStore((s) => s.setAiActiveProvider);
-  const updateAiProvider = useAppStore((s) => s.updateAiProvider);
-  const getActiveAiProvider = useAppStore((s) => s.getActiveAiProvider);
-  const addAiProvider = useAppStore((s) => s.addAiProvider);
   const loadAiProviders = useAppStore((s) => s.loadAiProviders);
   
   // 聊天会话
@@ -65,28 +61,54 @@ export function AiAssistant() {
   const createAiSession = useAppStore((s) => s.createAiSession);
   const deleteAiSession = useAppStore((s) => s.deleteAiSession);
   const setAiActiveSession = useAppStore((s) => s.setAiActiveSession);
+  const updateAiSessionMessages = useAppStore((s) => s.updateAiSessionMessages);
   
   // UI 面板
   const open = useAppStore((s) => s.aiAssistantOpen);
   const setOpen = useAppStore((s) => s.setAiAssistantOpen);
   const setSettingsPanelOpen = useAppStore((s) => s.setSettingsPanelOpen);
+  const insertMarkdownAtCursor = useAppStore((s) => s.insertMarkdownAtCursor);
 
   // 本地状态
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState("");
-  const [error, setError] = useState("");
+  // 错误信息仅通过 setError 写入（展示逻辑在渲染分支中判断 streaming 前缀），state 值本身不直接读取
+  const [, setError] = useState("");
   const [projectDir, setProjectDir] = useState("");
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [toolExecutionMsg, setToolExecutionMsg] = useState("");
+  // "直接写入文档"：AI 回复完成后自动追加到当前文档末尾，无需手动点击"插入文档"
+  const [directInsert, setDirectInsert] = useState<boolean>(
+    () => localStorage.getItem("textora.ai_direct_insert") !== "off"
+  );
+  const directInsertRef = useRef(directInsert);
+  useEffect(() => { directInsertRef.current = directInsert; }, [directInsert]);
+  const toggleDirectInsert = () => {
+    setDirectInsert((prev) => {
+      const next = !prev;
+      localStorage.setItem("textora.ai_direct_insert", next ? "on" : "off");
+      return next;
+    });
+  };
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // 最新消息快照：避免 runChat 闭包读取 stale messages
+  const messagesRef = useRef<ChatMessage[]>([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  // 当前活跃会话快照：流式响应期间切换会话时丢弃旧会话的写入
+  const activeSessionRef = useRef<string | null>(null);
+  useEffect(() => { activeSessionRef.current = activeSessionId; }, [activeSessionId]);
+  // 在途请求的 abort 控制器：切换会话时取消旧请求
+  const abortRef = useRef<AbortController | null>(null);
+  const loadingRef = useRef(false);
+  useEffect(() => { loadingRef.current = loading; }, [loading]);
 
   // 当前活跃 provider
   const activeProvider = providers.find((p) => p.id === activeProviderId) || providers.find((p) => p.apiKey) || null;
-  const activeTemplate = activeProvider ? getTemplate(activeProvider.templateId) : null;
   const configuredProviders = providers.filter((p) => p.apiKey);
 
   const scrollToBottom = useCallback(() => {
@@ -105,6 +127,28 @@ export function AiAssistant() {
       createAiSession(projectDir || workspaceRoot || undefined);
     }
   }, [sessions.length, createAiSession, projectDir, workspaceRoot]);
+
+  // 切换会话（activeSessionId 变化）时取消在途请求，避免旧请求继续写旧会话或污染新会话 UI。
+  // 注意：不能把 sessions 放进依赖——发消息时 updateAiSessionMessages 会更新 sessions，
+  // 若依赖 sessions，请求刚发出就会被这个 effect abort（AI 聊天完全不可用）。
+  useEffect(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    setStreaming("");
+    setToolExecutionMsg("");
+  }, [activeSessionId]);
+
+  // 当会话消息历史变化时，同步当前会话的 UI（不 abort 在途请求）
+  useEffect(() => {
+    const active = sessions.find((s) => s.id === activeSessionId);
+    if (active) {
+      setMessages(active.messages || []);
+      if (active.projectDir) setProjectDir(active.projectDir);
+    } else {
+      setMessages([]);
+    }
+  }, [activeSessionId, sessions]);
 
   // 当 workspaceRoot 变化且 projectDir 为空时同步
   useEffect(() => {
@@ -126,19 +170,35 @@ export function AiAssistant() {
 
   const runChat = useCallback(
     async (userText: string, systemPrompt?: string) => {
-      if (loading) return;
+      if (loadingRef.current) return;
       if (!activeProvider || !activeProvider.apiKey) {
-        setError("请先在设置中配置 AI 供应商的 API Key");
+        setError("请先在设置中配置 AI 供应商的 API Key，并设为默认");
         setSettingsPanelOpen(true);
         return;
       }
+
+      // 确保当前有活跃的会话 ID（基于 ref 读取最新值，避免 stale closure）
+      let sessionId = activeSessionRef.current;
+      if (!sessionId) {
+        sessionId = createAiSession(projectDir || workspaceRoot || undefined);
+      }
+      const mySession = sessionId;
+      // 请求发起后若用户切换了会话，丢弃对旧会话 UI 的写入
+      const stillActive = () => activeSessionRef.current === mySession;
+
       const userMsg: ChatMessage = { role: "user", content: userText };
-      const newMessages = [...messages, userMsg];
+      // 基于最新消息快照构建，副作用移出 state updater（StrictMode 下 updater 会被双调用）
+      const newMessages = [...messagesRef.current, userMsg];
       setMessages(newMessages);
+      updateAiSessionMessages(mySession, newMessages);
+
       setInput("");
       setError("");
       setLoading(true);
       setStreaming("");
+      setToolExecutionMsg("");
+      const controller = new AbortController();
+      abortRef.current = controller;
       try {
         const projectContext = buildProjectContext();
         const docContext = content || "";
@@ -147,18 +207,57 @@ export function AiAssistant() {
           history: newMessages.map((m) => ({ role: m.role, content: m.content })),
           documentContext: docContext,
           projectContext,
-          onChunk: (chunk) => setStreaming((prev) => prev + chunk),
+          enableTools: true,
+          workspaceRoot: projectDir || workspaceRoot || "",
+          onToolCall: (name) => {
+            if (!stillActive()) return;
+            setToolExecutionMsg(`调用工具中: ${name}...`);
+          },
+          confirmToolCall: confirmAiToolCall,
+          onChunk: (chunk) => {
+            // 会话已切换时不再把旧请求的流式文本写入新会话 UI
+            if (!stillActive()) return;
+            setStreaming((prev) => prev + chunk);
+          },
           systemPrompt,
+          signal: controller.signal,
         });
-        setMessages([...newMessages, { role: "assistant", content: fullText }]);
+        const finalMessages: ChatMessage[] = [...newMessages, { role: "assistant", content: fullText }];
+        updateAiSessionMessages(mySession, finalMessages);
+        if (!stillActive()) {
+          // 用户已切到其他会话：不再更新当前 UI，旧会话的历史已落库
+          return;
+        }
+        setMessages(prev => [...prev, { role: "assistant", content: fullText }]);
         setStreaming("");
+        setToolExecutionMsg("");
+        // 若开启"直接写入文档"，AI 回复完成后自动追加到文档末尾
+        if (directInsertRef.current && fullText.trim()) {
+          try {
+            insertMarkdownAtCursor(fullText);
+          } catch (err) {
+            console.warn("[AiAssistant] direct insert failed:", err);
+          }
+        }
       } catch (e: any) {
+        if (!stillActive()) return;
+        // 用户主动点击"停止"导致的 abort：静默处理，不把 "The user aborted a request"
+        // 之类的错误显示在界面上
+        if (controller.signal.aborted) {
+          setStreaming("");
+          setToolExecutionMsg("");
+          return;
+        }
         setError(e.message || "请求失败，请检查网络和配置");
       } finally {
-        setLoading(false);
+        if (abortRef.current === controller) abortRef.current = null;
+        if (stillActive()) {
+          setLoading(false);
+          setToolExecutionMsg("");
+        }
       }
     },
-    [loading, activeProvider, messages, content, buildProjectContext, setSettingsPanelOpen]
+    [activeProvider, content, buildProjectContext, setSettingsPanelOpen, createAiSession, updateAiSessionMessages, insertMarkdownAtCursor, projectDir, workspaceRoot]
   );
 
   const handleSend = () => {
@@ -175,8 +274,8 @@ export function AiAssistant() {
   };
 
   const handleInsert = (text: string) => {
-    const newContent = content + "\n\n" + text + "\n";
-    setContent(newContent);
+    // 走 Milkdown 高效插入路径，避免 replaceAllAction 全量 re-parse 卡死界面
+    insertMarkdownAtCursor(text);
   };
 
   const handleNewChat = () => {
@@ -217,12 +316,22 @@ export function AiAssistant() {
           style={{ fontSize: 12, padding: "2px 8px" }}>+ 新建</button>
         <button className="textora-btn" onClick={() => setShowHistory(!showHistory)} title="历史对话"
           style={{ fontSize: 12, padding: "2px 8px" }}>📋 历史</button>
+        <button className="textora-btn" onClick={toggleDirectInsert}
+          title={directInsert ? "已开启：AI 回复完成后自动写入文档" : "已关闭：需手动点击「插入文档」"}
+          style={{
+            fontSize: 11, padding: "2px 8px",
+            background: directInsert ? "var(--textora-accent)" : "transparent",
+            color: directInsert ? "#fff" : "var(--textora-fg)",
+            border: "1px solid var(--textora-border)",
+          }}>
+          {directInsert ? "✍️ 直写文档" : "✍️ 仅对话"}
+        </button>
         <div style={{ flex: 1 }} />
         {/* 模型选择器 */}
         <div style={{ position: "relative" }}>
           <button className="textora-btn" onClick={() => setShowModelPicker(!showModelPicker)}
             style={{ fontSize: 11, padding: "2px 8px", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {activeProvider ? (activeProvider.label + " / " + activeProvider.model) : "选择模型"} ▾
+            {activeProvider ? (activeProvider.label + " / " + (activeProvider.model || "未指定")) : "选择模型"} ▾
           </button>
           {showModelPicker && (
             <div className="textora-card" style={{
@@ -234,28 +343,22 @@ export function AiAssistant() {
                   暂无已配置供应商，请前往设置配置
                 </div>
               ) : (
-                configuredProviders.map((p) => {
-                  const tmpl = getTemplate(p.templateId);
-                  const models = tmpl?.models || [p.model];
-                  return (
-                    <div key={p.id} style={{ marginBottom: 4 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, padding: "4px 8px", color: "var(--textora-fg-muted)" }}>
-                        {p.label}
-                      </div>
-                      {models.map((m: string) => (
-                        <div key={m} onClick={() => { updateAiProvider(p.id, { model: m }); setShowModelPicker(false); }}
-                          className="textora-ai-model-item" style={{
-                            padding: "4px 12px", fontSize: 12, cursor: "pointer",
-                            borderRadius: 4,
-                            background: p.id === activeProviderId && m === p.model ? "var(--textora-accent)" : "transparent",
-                            color: p.id === activeProviderId && m === p.model ? "#fff" : "var(--textora-fg)",
-                          }}>
-                          {m}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })
+                configuredProviders.map((p) => (
+                  <div key={p.id} onClick={() => {
+                    setAiActiveProvider(p.id);
+                    setShowModelPicker(false);
+                  }}
+                    className="textora-ai-model-item" style={{
+                      padding: "6px 12px", fontSize: 12, cursor: "pointer",
+                      borderRadius: 4,
+                      background: p.id === activeProviderId ? "var(--textora-accent)" : "transparent",
+                      color: p.id === activeProviderId ? "#fff" : "var(--textora-fg)",
+                      marginBottom: 2,
+                    }}>
+                    <div style={{ fontWeight: 600 }}>{p.label}</div>
+                    <div style={{ fontSize: 10, opacity: 0.8 }}>{p.model || "未指定模型"}</div>
+                  </div>
+                ))
               )}
             </div>
           )}
@@ -296,18 +399,31 @@ export function AiAssistant() {
             </div>
           ) : (
             sessions.map((s) => (
-              <div key={s.id} onClick={() => { handleSelectSession(s); setShowHistory(false); }}
+              <div key={s.id}
+                className="flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5"
                 style={{
                   padding: "6px 12px", fontSize: 12, cursor: "pointer",
                   borderBottom: "1px solid var(--textora-border)",
                   background: s.id === activeSessionId ? "var(--textora-bg-muted)" : "transparent",
                 }}>
-                <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {s.title || "未命名对话"}
+                <div style={{ flex: 1, minWidth: 0 }} onClick={() => { handleSelectSession(s); setShowHistory(false); }}>
+                  <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.title || "未命名对话"}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--textora-fg-muted)" }}>
+                    {new Date(s.updatedAt).toLocaleString()} · {s.messages.length} 条消息
+                  </div>
                 </div>
-                <div style={{ fontSize: 10, color: "var(--textora-fg-muted)" }}>
-                  {new Date(s.updatedAt).toLocaleString()} · {s.messages.length} 条消息
-                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteAiSession(s.id);
+                  }}
+                  className="text-xs px-1.5 py-0.5 rounded text-red-500 hover:bg-red-500/10 ml-2"
+                  title="删除此会话"
+                >
+                  🗑️
+                </button>
               </div>
             ))
           )}
@@ -325,7 +441,10 @@ export function AiAssistant() {
             • 帮你规划和撰写 Markdown 文档<br />
             • 理解项目上下文，生成相关内容<br />
             • 润色、续写、提供写作思路<br /><br />
-            在下方输入你的问题，按 Enter 发送。
+            {directInsert
+              ? "✍️ 当前为「直写文档」模式：AI 回复会自动写入文档。"
+              : "当前为「仅对话」模式：回复后点「插入文档」按钮写入。"}
+            <br />在下方输入你的问题，按 Enter 发送。
           </div>
         )}
         {messages.map((msg, i) => (
@@ -356,6 +475,16 @@ export function AiAssistant() {
             color: "var(--textora-fg)",
           }}>
             {streaming}<span className="textora-cursor-blink">|</span>
+          </div>
+        )}
+        {toolExecutionMsg && (
+          <div style={{
+            alignSelf: "flex-start", maxWidth: "90%", padding: "6px 10px", borderRadius: 8,
+            fontSize: 12, lineHeight: 1.5, background: "var(--textora-bg)", 
+            color: "var(--textora-fg-muted)", fontStyle: "italic", border: "1px dashed var(--textora-border)",
+            display: "flex", alignItems: "center", gap: 4
+          }}>
+            <span className="textora-spin">⚙️</span> {toolExecutionMsg}
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -411,8 +540,3 @@ export function AiAssistant() {
   );
 }
 
-// Helper to update provider (used in model picker)
-function updateAiProvider(id: string, patch: Partial<ProviderConfig>) {
-  const { useAppStore } = require("../store/useAppStore");
-  useAppStore.getState().updateAiProvider(id, patch);
-}

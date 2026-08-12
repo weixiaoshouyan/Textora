@@ -7,6 +7,7 @@
 import katex from "katex";
 import { Plugin, PluginKey } from "@milkdown/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/prose/view";
+import { isLargeDoc } from "./docGuard";
 import { $prose } from "@milkdown/utils";
 
 interface PluginState {
@@ -62,16 +63,36 @@ function findMathBlocks(
   return out;
 }
 
+// KaTeX 渲染缓存：同一公式在多次输入事务中反复触发 apply，
+// 每次重跑 katex.renderToString 是 O(n) 的字符串处理，量大时拖慢编辑。
+// 以 `${kind}|${tex}` 为键缓存渲染结果，超上限时整体清空防止无界增长。
+const katexRenderCache = new Map<string, string>();
+const KATEX_CACHE_MAX = 500;
+
 function renderKatex(tex: string, kind: "inline" | "block"): string {
+  const cacheKey = `${kind}|${tex}`;
+  const cached = katexRenderCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  let html: string;
   try {
-    return katex.renderToString(tex, {
+    html = katex.renderToString(tex, {
       throwOnError: false,
       displayMode: kind === "block",
       output: "html",
     });
   } catch (e) {
-    return `<span style="color:#d4380d">[公式错误: ${(e as Error).message}]</span>`;
+    // 错误消息可能包含用户输入（TeX 源码片段），转义后再注入 innerHTML，防止 XSS
+    const msg = (e as Error).message
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    html = `<span style="color:#d4380d">[公式错误: ${msg}]</span>`;
   }
+  if (katexRenderCache.size >= KATEX_CACHE_MAX) {
+    katexRenderCache.clear();
+  }
+  katexRenderCache.set(cacheKey, html);
+  return html;
 }
 
 export const mathPlugin = $prose(() => {
@@ -83,6 +104,9 @@ export const mathPlugin = $prose(() => {
         const meta = tr.getMeta(mathKey);
         const bump = meta && typeof meta.bump === "number" ? meta.bump : prev.bump;
         if (!tr.docChanged && bump === prev.bump) return prev;
+        // 大文档降级：输入（docChanged 且非 bump）时跳过全量重建，
+        // 装饰位置由 ProseMirror 自动 mapping 跟随，内容在 bump 时刷新
+        if (tr.docChanged && bump === prev.bump && isLargeDoc(tr.doc)) return prev;
 
         const items = findMathBlocks(tr.doc);
         const decos: Decoration[] = [];

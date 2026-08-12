@@ -4,7 +4,6 @@
  * 预设供应商（只需填 API Key）+ 自定义供应商
  * 支持保存多个已配置供应商，AI 助手可切换使用
  */
-import type { AiConfig } from "./aiService";
 import { invoke } from "../ipc";
 
 export const AI_STORAGE_KEY = "textora_ai_configs";
@@ -20,6 +19,8 @@ export interface ProviderTemplate {
   defaultModel: string;
   models: string[];       // 该供应商可用模型列表
   keyPlaceholder: string; // API Key 输入框占位符
+  domestic?: boolean;     // 是否为国产服务商（用于一键配置筛选）
+  keyHint?: string;       // API Key 获取链接提示
 }
 
 /** 已配置的供应商实例 */
@@ -52,14 +53,18 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     defaultModel: "deepseek-chat",
     models: ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"],
     keyPlaceholder: "sk-...",
+    domestic: true,
+    keyHint: "https://platform.deepseek.com/api_keys",
   },
   {
     id: "qwen",
-    label: "闃滃勾鍗?(Qwen)",
+    label: "通义千问 (Qwen)",
     endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     defaultModel: "qwen-plus",
     models: ["qwen-plus", "qwen-turbo", "qwen-max", "qwen-long", "qwen-coder-plus"],
     keyPlaceholder: "sk-...",
+    domestic: true,
+    keyHint: "https://dashscope.console.aliyun.com/apiKey",
   },
   {
     id: "kimi",
@@ -68,14 +73,18 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     defaultModel: "moonshot-v1-8k",
     models: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
     keyPlaceholder: "sk-...",
+    domestic: true,
+    keyHint: "https://platform.moonshot.cn/console/api-keys",
   },
   {
     id: "zhipu",
-    label: "鏅鸿珤AI (GLM)",
+    label: "智谱AI (GLM)",
     endpoint: "https://open.bigmodel.cn/api/paas/v4",
     defaultModel: "glm-4-flash",
     models: ["glm-4-flash", "glm-4", "glm-4-plus", "glm-4-air", "glm-4v"],
     keyPlaceholder: "your-api-key",
+    domestic: true,
+    keyHint: "https://open.bigmodel.cn/usercenter/apikeys",
   },
   {
     id: "anthropic",
@@ -87,11 +96,21 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   },
   {
     id: "ollama",
-    label: "Ollama (鏈湴)",
+    label: "Ollama (本地)",
     endpoint: "http://localhost:11434/v1",
     defaultModel: "llama3.1",
     models: ["llama3.1", "llama3", "codellama", "mistral", "qwen2", "gemma2", "phi3"],
     keyPlaceholder: "",
+  },
+  {
+    id: "longcat",
+    label: "龙猫 (LongCat)",
+    endpoint: "https://longcat.chat/api/v1",
+    defaultModel: "LongCat-Flash-Chat",
+    models: ["LongCat-Flash-Chat", "LongCat-Flash-Thinking", "LongCat-2.0"],
+    keyPlaceholder: "ak-...",
+    domestic: true,
+    keyHint: "https://longcat.chat/platform/product",
   },
   {
     id: "groq",
@@ -103,7 +122,7 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   },
   {
     id: "custom",
-    label: "鑷畾涔?(OpenAI 鍏煎)",
+    label: "自定义 (OpenAI 兼容)",
     endpoint: "",
     defaultModel: "",
     models: [],
@@ -127,18 +146,34 @@ export function getTemplate(templateId: string): ProviderTemplate | undefined {
 
 // ===================== 配置的持久化读写 =====================
 
-/** 保存配置列表到 localStorage (apiKey 存入 safeStorage) */
+/** 保存配置列表到 localStorage (apiKey 存入 safeStorage)
+ *  同时清理已删除 provider 残留的 secret，避免 safeStorage 累积旧凭证
+ */
 export async function saveProviderConfigs(configs: ProviderConfig[]): Promise<void> {
   try {
-    // 先清除所有旧的 secrets
+    // 1. 读取旧的配置列表，找出被删除的 provider id（其 secret 需清理）
+    const oldRaw = localStorage.getItem(AI_STORAGE_KEY);
+    if (oldRaw) {
+      try {
+        const oldParsed = JSON.parse(oldRaw) as Array<{ id: string }>;
+        const currentIds = new Set(configs.map((c) => c.id));
+        for (const old of oldParsed) {
+          if (!currentIds.has(old.id)) {
+            // provider 已被删除，清理其残留 secret
+            try { await invoke("delete_secret", { key: SECRET_PREFIX + old.id }); } catch { /* ignore */ }
+          }
+        }
+      } catch { /* ignore parse error */ }
+    }
+    // 2. 保存当前 configs 的 apiKey 到 safeStorage
     for (const c of configs) {
       const secretKey = SECRET_PREFIX + c.id;
       if (c.apiKey) {
         await invoke("store_secret", { key: secretKey, value: c.apiKey });
       }
     }
-    // 保存不含 apiKey 的配置
-    const safe = configs.map(({ apiKey, ...rest }) => rest);
+    // 3. 保存不含 apiKey 的配置
+    const safe = configs.map(({ apiKey: _apiKey, ...rest }) => rest);
     localStorage.setItem(AI_STORAGE_KEY, JSON.stringify(safe));
   } catch (e) {
     console.error("Failed to save provider configs:", e);

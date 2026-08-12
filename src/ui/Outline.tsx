@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
-import { extractOutline, type OutlineItem } from "../editor/outline";
-import { extractSymbols, type CodeSymbol } from "../editor/codeSymbols";
+import { extractOutline } from "../editor/outline";
+import { extractSymbols } from "../editor/codeSymbols";
 import { useLocale, tFor } from "../i18n";
 
 export function Outline() {
@@ -18,12 +18,13 @@ export function Outline() {
 
   // Extract code symbols for code/source mode
   const symbols = useMemo(() => {
-    if (kind !== "code") return [];
+    if (kind !== "code" && kind !== "unknown") return [];
     return extractSymbols(content, language);
   }, [content, kind, language]);
 
-  // Use symbols for code mode, items for markdown mode
-  const isCodeMode = kind === "code" || (kind === "markdown" && sourceMode);
+  // 使用 symbols 显示 code 模式内容；unknown 类型（txt/log/无扩展名等）不是
+  // markdown，用 markdown 标题提取会显示错误内容，同样按代码模式处理（无符号时为空）
+  const isCodeMode = kind === "code" || kind === "unknown" || (kind === "markdown" && sourceMode);
   const displayItems = isCodeMode ? symbols.map(s => ({
     level: 0,
     text: s.name,
@@ -69,11 +70,11 @@ export function Outline() {
     editor.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => editor.removeEventListener("scroll", onScroll);
-  }, [items, currentPath, sourceMode]);
+  }, [items, currentPath, sourceMode, displayItems]);
 
   const onJump = (item: any, index: number) => {
-    if (sourceMode) {
-      // 源码模式下，跳转到对应行
+    // 源码模式（markdown 源码视图）与代码文件（code/unknown 类型）都跳转到 CodeEditor 对应行
+    if (sourceMode || isCodeMode) {
       const sourceEditor = document.querySelector<HTMLTextAreaElement>(".textora-code-textarea");
       if (sourceEditor) {
         const lines = content.split("\n");

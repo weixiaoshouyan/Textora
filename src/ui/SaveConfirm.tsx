@@ -22,13 +22,13 @@ export function SaveConfirm() {
         <div className="msg">{pending.message}</div>
         <div className="actions">
           <button className="textora-btn" onClick={pending.onCancel}>
-            {t("unsaved.cancel")}
+            {pending.cancelLabel || t("unsaved.cancel")}
           </button>
           <button className="textora-btn" onClick={pending.onDiscard}>
-            {t("unsaved.discard")}
+            {pending.discardLabel || t("unsaved.discard")}
           </button>
           <button className="textora-btn textora-btn-primary" onClick={pending.onSave}>
-            {t("unsaved.save")}
+            {pending.saveLabel || t("unsaved.save")}
           </button>
         </div>
       </div>

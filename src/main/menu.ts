@@ -10,6 +10,12 @@ export function buildMenu(
   const isDev = process.env.NODE_ENV === 'development' || process.env.TEXTORA_DEV === '1';
   const en = locale === 'en';
 
+  const sendToWindow = (channel: string, ...args: unknown[]) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, ...args);
+    }
+  };
+
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: en ? 'File' : '文件',
@@ -17,28 +23,42 @@ export function buildMenu(
         {
           label: en ? 'New File' : '新建文件',
           accelerator: 'CmdOrCtrl+N',
-          click: () => mainWindow?.webContents.send('textora:menu', 'file:new'),
+          click: () => sendToWindow('textora:menu', 'file:new'),
         },
+        {
+          label: en ? 'New Window' : '新建窗口',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          // 交由渲染进程处理（复用 window-new IPC 链路）
+          click: () => sendToWindow('textora:menu', 'file:new-window'),
+        },
+        { type: 'separator' },
         {
           label: en ? 'Open File…' : '打开文件…',
           accelerator: 'CmdOrCtrl+O',
-          click: () => mainWindow?.webContents.send('textora:menu', 'file:open'),
+          click: () => sendToWindow('textora:menu', 'file:open'),
         },
         {
           label: en ? 'Open Folder…' : '打开文件夹…',
           accelerator: 'CmdOrCtrl+Shift+O',
-          click: () => mainWindow?.webContents.send('textora:menu', 'file:open-folder'),
+          click: () => sendToWindow('textora:menu', 'file:open-folder'),
         },
         { type: 'separator' },
         {
           label: en ? 'Save' : '保存',
           accelerator: 'CmdOrCtrl+S',
-          click: () => mainWindow?.webContents.send('textora:menu', 'file:save'),
+          click: () => sendToWindow('textora:menu', 'file:save'),
         },
         {
           label: en ? 'Save As…' : '另存为…',
           accelerator: 'CmdOrCtrl+Shift+S',
-          click: () => mainWindow?.webContents.send('textora:menu', 'file:save-as'),
+          click: () => sendToWindow('textora:menu', 'file:save-as'),
+        },
+        { type: 'separator' },
+        {
+          label: en ? 'File Properties…' : '文件属性…',
+          accelerator: 'CmdOrCtrl+I',
+          // 渲染端通过 textora:menu 通道处理（派发 textora:show-file-info DOM 事件）
+          click: () => sendToWindow('textora:menu', 'file:info'),
         },
         { type: 'separator' },
         { role: 'quit', label: en ? 'Quit' : '退出' },
@@ -58,12 +78,12 @@ export function buildMenu(
         {
           label: en ? 'Find' : '查找',
           accelerator: 'CmdOrCtrl+F',
-          click: () => mainWindow?.webContents.send('textora:menu', 'edit:find'),
+          click: () => sendToWindow('textora:menu', 'edit:find'),
         },
         {
           label: en ? 'Replace' : '替换',
-          accelerator: 'CmdOrCtrl+H',
-          click: () => mainWindow?.webContents.send('textora:menu', 'edit:replace'),
+          accelerator: 'CmdOrCtrl+Shift+H',
+          click: () => sendToWindow('textora:menu', 'edit:replace'),
         },
       ],
     },
@@ -88,11 +108,11 @@ export function buildMenu(
       submenu: [
         {
           label: en ? 'About Textora' : '关于 Textora',
-          click: () => mainWindow?.webContents.send('textora:menu', 'help:about'),
+          click: () => sendToWindow('textora:menu', 'help:about'),
         },
         {
           label: en ? 'Open Website' : '打开官方网站',
-          click: () => shell.openExternal('https://github.com'),
+          click: () => shell.openExternal('https://github.com/textora/textora'),
         },
       ],
     },

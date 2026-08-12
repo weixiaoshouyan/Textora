@@ -27,6 +27,7 @@ export function attachTypewriter(view: EditorView, enable: () => boolean) {
   let isUserScrolling = false;
   let scrollTimer: number | null = null;
   let rafScheduled = false;
+  let rafId: number | null = null;
 
   const markUserScroll = () => {
     isUserScrolling = true;
@@ -35,8 +36,17 @@ export function attachTypewriter(view: EditorView, enable: () => boolean) {
       isUserScrolling = false;
     }, 150);
   };
-  scrollEl.addEventListener("wheel", markUserScroll, { passive: true });
-  scrollEl.addEventListener("touchmove", markUserScroll, { passive: true });
+
+  const attachScrollListeners = (el: HTMLElement) => {
+    el.addEventListener("wheel", markUserScroll, { passive: true });
+    el.addEventListener("touchmove", markUserScroll, { passive: true });
+  };
+  const detachScrollListeners = (el: HTMLElement) => {
+    el.removeEventListener("wheel", markUserScroll);
+    el.removeEventListener("touchmove", markUserScroll);
+  };
+
+  attachScrollListeners(scrollEl);
 
   const onSelChange = () => {
     if (!enable()) return;
@@ -63,8 +73,9 @@ export function attachTypewriter(view: EditorView, enable: () => boolean) {
   const scheduleCenter = () => {
     if (rafScheduled) return;
     rafScheduled = true;
-    requestAnimationFrame(() => {
+    rafId = requestAnimationFrame(() => {
       rafScheduled = false;
+      rafId = null;
       onSelChange();
     });
   };
@@ -72,8 +83,13 @@ export function attachTypewriter(view: EditorView, enable: () => boolean) {
   const onKeyUp = () => scheduleCenter();
   const onClick = () => scheduleCenter();
   const onResize = () => {
-    // 重新查找滚动容器（布局可能变化）
-    scrollEl = findScrollEl(view);
+    // 重新查找滚动容器（布局可能变化）；容器变更时先解绑旧容器再绑定新容器，避免监听泄漏
+    const next = findScrollEl(view);
+    if (next !== scrollEl) {
+      detachScrollListeners(scrollEl);
+      scrollEl = next;
+      attachScrollListeners(scrollEl);
+    }
     scheduleCenter();
   };
   const dom = view.dom as HTMLElement;
@@ -83,8 +99,8 @@ export function attachTypewriter(view: EditorView, enable: () => boolean) {
 
   return () => {
     if (scrollTimer) window.clearTimeout(scrollTimer);
-    scrollEl.removeEventListener("wheel", markUserScroll);
-    scrollEl.removeEventListener("touchmove", markUserScroll);
+    if (rafId != null) cancelAnimationFrame(rafId);
+    detachScrollListeners(scrollEl);
     dom.removeEventListener("keyup", onKeyUp);
     dom.removeEventListener("click", onClick);
     window.removeEventListener("resize", onResize);

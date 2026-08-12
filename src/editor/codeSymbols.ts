@@ -2,7 +2,6 @@
  * 代码符号提取器
  * 从源代码中提取函数、类、接口等符号，用于大纲视图
  */
-import type { MilkdownEditor } from "./MilkdownEditor";
 
 export interface CodeSymbol {
   name: string;
@@ -41,7 +40,7 @@ const LANGUAGE_PATTERNS: Record<string, SymbolPattern[]> = {
   ],
   java: [
     { pattern: /^(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:abstract\s+)?(?:final\s+)?(?:class|interface|enum)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/, kind: "class" },
-    { pattern: /^(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?(?:<[\w<>,\s?]+>\s+)?[\w<>\[\]]+\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/, kind: "method" },
+    { pattern: /^(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?(?:<[\w<>,\s?]+>\s+)?[\w<>[\]]+\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/, kind: "method" },
   ],
   c: [
     { pattern: /^(?:static\s+|inline\s+)?(?:const\s+)?(?:unsigned\s+)?(?:long\s+)?(?:int|char|void|float|double|short|long|struct\s+\w+)\s+\*?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/, kind: "function" },

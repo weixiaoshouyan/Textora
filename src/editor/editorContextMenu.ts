@@ -1,10 +1,12 @@
 import { useAppStore } from "../store/useAppStore";
 import { CtxMenuItem } from "../ui/ContextMenu";
+import { showPrompt } from "../ui/showPrompt";
 import { useLocale, tFor } from "../i18n";
 import { invoke, openDialog as open } from "../ipc";
 import type { EditorView } from "@milkdown/prose/view";
 import { setBlockType, toggleMark, wrapIn } from "@milkdown/prose/commands";
 import { undo, redo } from "@milkdown/prose/history";
+import { TextSelection } from "@milkdown/prose/state";
 
 // ---- 模式检测与编辑器获取 ----
 
@@ -118,8 +120,14 @@ function doPastePlain() {
   execInEditor(
     (view) => {
       navigator.clipboard.readText().then((text) => {
-        const tr = view.state.tr.replaceSelectionWith(view.state.schema.text(text));
-        view.dispatch(tr);
+        // 剪贴板读取是异步的，期间视图可能已被销毁
+        if (!view.dom || !view.dom.isConnected || !view.state) return;
+        try {
+          const tr = view.state.tr.replaceSelectionWith(view.state.schema.text(text));
+          view.dispatch(tr);
+        } catch {
+          /* 视图已销毁，忽略 */
+        }
       }).catch(() => {});
     },
     (ta) => {
@@ -134,11 +142,8 @@ function doSelectAll() {
   execInEditor(
     (view) => {
       const { state } = view;
-      const tr = state.tr.setSelection(
-        // @ts-ignore - TextSelection import varies
-        state.selection.constructor.create(state.doc, 0, state.doc.content.size)
-      );
-      view.dispatch(tr);
+      const selection = TextSelection.create(state.doc, 0, state.doc.content.size);
+      view.dispatch(state.tr.setSelection(selection));
     },
     (ta) => {
       ta.select();
@@ -255,10 +260,10 @@ async function doInsertImage() {
   }
 }
 
-function doInsertLink() {
+async function doInsertLink() {
   const locale = useLocale.getState().locale;
   const t = tFor(locale);
-  const url = window.prompt(t("ctx.insertLink.prompt"), t("ctx.insertLink.defaultUrl"));
+  const url = await showPrompt(t("ctx.insertLink.prompt"), t("ctx.insertLink.defaultUrl"));
   if (!url) return;
   execInEditor(
     (view) => {
@@ -290,8 +295,13 @@ function doInsertTable() {
   const markdown = `\n| Header | Header | Header |\n| ------ | ------ | ------ |\n| Cell   | Cell   | Cell   |\n| Cell   | Cell   | Cell   |\n`;
   execInEditor(
     (view) => {
-      const tr = view.state.tr.replaceSelectionWith(view.state.schema.text(markdown));
-      view.dispatch(tr);
+      const schema = view.state.schema;
+      const codeBlock = schema.nodes.code_block?.create(null, schema.text(markdown));
+      if (codeBlock) {
+        view.dispatch(view.state.tr.replaceSelectionWith(codeBlock));
+      } else {
+        view.dispatch(view.state.tr.insertText(markdown));
+      }
     },
     (ta) => codeInsertText(ta, markdown)
   );
@@ -313,8 +323,13 @@ function doInsertMath() {
   const markdown = "\n$$\n\n$$\n";
   execInEditor(
     (view) => {
-      const tr = view.state.tr.replaceSelectionWith(view.state.schema.text(markdown));
-      view.dispatch(tr);
+      const schema = view.state.schema;
+      const codeBlock = schema.nodes.code_block?.create(null, schema.text(markdown));
+      if (codeBlock) {
+        view.dispatch(view.state.tr.replaceSelectionWith(codeBlock));
+      } else {
+        view.dispatch(view.state.tr.insertText(markdown));
+      }
     },
     (ta) => codeInsertText(ta, markdown)
   );
@@ -324,8 +339,13 @@ function doInsertMermaid() {
   const markdown = "\n```mermaid\ngraph TD;\n    A-->B;\n```\n";
   execInEditor(
     (view) => {
-      const tr = view.state.tr.replaceSelectionWith(view.state.schema.text(markdown));
-      view.dispatch(tr);
+      const schema = view.state.schema;
+      const codeBlock = schema.nodes.code_block?.create(null, schema.text(markdown));
+      if (codeBlock) {
+        view.dispatch(view.state.tr.replaceSelectionWith(codeBlock));
+      } else {
+        view.dispatch(view.state.tr.insertText(markdown));
+      }
     },
     (ta) => codeInsertText(ta, markdown)
   );
@@ -350,8 +370,13 @@ function doInsertTaskList() {
   const markdown = "\n- [ ] Task 1\n- [ ] Task 2\n- [x] Task 3\n";
   execInEditor(
     (view) => {
-      const tr = view.state.tr.replaceSelectionWith(view.state.schema.text(markdown));
-      view.dispatch(tr);
+      const schema = view.state.schema;
+      const codeBlock = schema.nodes.code_block?.create(null, schema.text(markdown));
+      if (codeBlock) {
+        view.dispatch(view.state.tr.replaceSelectionWith(codeBlock));
+      } else {
+        view.dispatch(view.state.tr.insertText(markdown));
+      }
     },
     (ta) => codeInsertText(ta, markdown)
   );

@@ -1,4 +1,4 @@
-﻿import { Component, useEffect } from "react";
+import { Component, useEffect, lazy, Suspense, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useAppStore, getActiveTab } from "./store/useAppStore";
 import { useLocale, tFor, initSystemLocale } from "./i18n";
@@ -6,25 +6,29 @@ import { TopBar } from "./ui/TopBar";
 import { StatusBar } from "./ui/StatusBar";
 import { Sidebar } from "./ui/Sidebar";
 import { Welcome } from "./ui/Welcome";
-import { MilkdownEditor } from "./editor/MilkdownEditor";
-import { CodeEditor } from "./editor/CodeEditor";
+// 编辑器组件体积大（Milkdown/mermaid/shiki ~12MB），懒加载避免首屏全量解析
+const MilkdownEditor = lazy(() => import("./editor/MilkdownEditor").then((m) => ({ default: m.MilkdownEditor })));
+const CodeEditor = lazy(() => import("./editor/CodeEditor").then((m) => ({ default: m.CodeEditor })));
+const SplitView = lazy(() => import("./ui/SplitView").then((m) => ({ default: m.SplitView })));
 import { ImageView, HexView } from "./editor/FileViewers";
 import { FindReplace } from "./ui/FindReplace";
 import { QuickOpen } from "./ui/QuickOpen";
-import { SettingsPanel } from "./ui/SettingsPanel";
+const SettingsPanel = lazy(() => import("./ui/SettingsPanel").then(m => ({ default: m.SettingsPanel })));
 import { TabBar } from "./ui/TabBar";
 import { CommandPalette } from "./ui/CommandPalette";
 import { SearchInFiles } from "./ui/SearchInFiles";
 import { SaveConfirm } from "./ui/SaveConfirm";
 import { DiffView } from "./ui/DiffView";
+import { GraphView } from "./ui/GraphView";
 import { AiAssistant } from "./ui/AiAssistant";
+import { FileInfoDialog } from "./ui/FileInfo";
 import { useShortcuts } from "./hooks/useShortcuts";
-import { useTauriMenu } from "./hooks/useTauriMenu";
+import { useAppMenu } from "./hooks/useAppMenu";
 import { useDragOpen } from "./hooks/useDragOpen";
 import { useWindowClose } from "./hooks/useWindowClose";
 import { useAutoSave } from "./hooks/useAutoSave";
-import { SplitView } from "./ui/SplitView";
 import { disposeShiki } from "./plugins/shikiClient";
+import { rlog, installGlobalErrorHandlers } from "./rendererLogger";
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -36,10 +40,10 @@ class ErrorBoundary extends Component<
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("ErrorBoundary caught:", error, info);
-    // 上报到主进程日志文件
-    try {
-      window.textora.emit("log", { level: "error", message: error.message, stack: info.componentStack });
-    } catch { /* ignore */ }
+    rlog.error("ErrorBoundary caught: " + error.message, {
+      stack: error.stack,
+      componentStack: info.componentStack,
+    });
   }
   render() {
     if (this.state.hasError) {
@@ -85,12 +89,38 @@ class ErrorBoundary extends Component<
   }
 }
 
+/**
+ * 局部错误边界：包裹懒加载组件（如 SettingsPanel）。
+ * chunk 加载失败（磁盘错误/缓存损坏）时静默降级，
+ * 而不是把错误冒泡到顶层 ErrorBoundary 导致整个界面白屏。
+ */
+class LazyBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: Error) {
+    console.error("LazyBoundary caught:", error);
+    rlog.error("LazyBoundary caught: " + error.message);
+  }
+  render() {
+    if (this.state.failed) return null;
+    return this.props.children;
+  }
+}
+
 export default function App() {
   useShortcuts();
-  useTauriMenu();
+  useAppMenu();
   useDragOpen();
   useWindowClose();
   useAutoSave();
+
+  useEffect(() => {
+    installGlobalErrorHandlers();
+    rlog.info("Renderer App mounted.");
+  }, []);
+
   const editing = useAppStore((s) => s.editing);
   const init = useAppStore((s) => s.init);
   const settings = useAppStore((s) => s.settings);
@@ -99,36 +129,56 @@ export default function App() {
   const focusMode = settings.focusMode;
   const content = useAppStore((s) => s.content);
   const setContent = useAppStore((s) => s.setContent);
+  const splitViewOpen = useAppStore((s) => s.splitViewOpen);
+  const currentPath = useAppStore((s) => s.currentPath);
+  const activeTabId = useAppStore((s) => s.activeTabId);
+  const activeTab = useAppStore((s) => getActiveTab(s));
 
-  // 编辑器渲染：按活动标签类型选择
+  const [fileInfoPath, setFileInfoPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = () => {
+      if (currentPath) {
+        setFileInfoPath(currentPath);
+      }
+    };
+    window.addEventListener("textora:show-file-info", handler);
+    return () => window.removeEventListener("textora:show-file-info", handler);
+  }, [currentPath]);
+
   const renderEditor = () => {
-    const tab = getActiveTab(useAppStore.getState());
-    if (!tab) return <Welcome />;
-    if (tab.kind === "image") return <ImageView />;
-    if (tab.kind === "binary") return <HexView />;
-    if (tab.kind === "markdown" && !sourceMode)
+    if (!activeTab) return <Welcome />;
+    if (splitViewOpen && (activeTab.kind === "markdown" || activeTab.kind === "code")) return <SplitView />;
+    if (activeTab.kind === "image") return <ImageView />;
+    if (activeTab.kind === "binary") return <HexView />;
+    if (activeTab.kind === "markdown" && !sourceMode)
       return <MilkdownEditor content={content} onChange={setContent} />;
-    return <CodeEditor content={content} language={tab.language} onChange={setContent} />;
+    return <CodeEditor content={content} language={activeTab.language} onChange={setContent} />;
   };
 
   useEffect(() => {
     let cancelled = false;
     let cleanup: (() => void) | null = null;
-    void init().then((fn) => {
-      if (cancelled) {
-        // 已卸载（如 StrictMode 双调用），立即清理
-        fn();
-      } else {
-        cleanup = fn;
-      }
-    });
+    void init()
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          cleanup = fn;
+        }
+      })
+      .catch((err) => {
+        // init 失败（如 watch-event 监听注册失败）：记录日志避免 unhandledrejection，
+        // 应用其余功能（打开文件/编辑）仍可用。
+        console.error("[App] init failed:", err);
+        rlog.error("[App] init failed: " + (err instanceof Error ? err.message : String(err)));
+      });
     return () => {
       cancelled = true;
       cleanup?.();
     };
   }, [init]);
 
-  // 应用退出时销毁 Shiki 高亮器，释放内存
   useEffect(() => {
     const handler = () => {
       void disposeShiki();
@@ -137,12 +187,9 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
-  // 启动时检测系统语言并应用
   useEffect(() => {
     void initSystemLocale();
   }, []);
-
-  // 字体设置已在 MilkdownEditor 内通过 applyFont 应用
 
   return (
     <ErrorBoundary>
@@ -154,8 +201,12 @@ export default function App() {
             <TabBar />
             <div className="flex-1 min-h-0 relative overflow-auto">
               {editing ? (
-                <div key={useAppStore.getState().activeTabId ?? "none"} style={{ height: "100%" }}>
-                  {renderEditor()}
+                <div key={activeTabId ?? "none"} style={{ height: "100%" }}>
+                  <Suspense fallback={null}>
+                    <LazyBoundary>
+                      {renderEditor()}
+                    </LazyBoundary>
+                  </Suspense>
                 </div>
               ) : (
                 <Welcome />
@@ -170,8 +221,21 @@ export default function App() {
         <CommandPalette />
         <SaveConfirm />
         <DiffView />
-        {settingsPanelOpen && <SettingsPanel />}
+        <GraphView />
+        {settingsPanelOpen && (
+          <Suspense fallback={null}>
+            <LazyBoundary>
+              <SettingsPanel />
+            </LazyBoundary>
+          </Suspense>
+        )}
         <AiAssistant />
+        {fileInfoPath && (
+          <FileInfoDialog
+            filePath={fileInfoPath}
+            onClose={() => setFileInfoPath(null)}
+          />
+        )}
       </div>
     </ErrorBoundary>
   );

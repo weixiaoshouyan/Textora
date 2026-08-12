@@ -51,9 +51,16 @@ export function attachFocusMode(view: EditorView, enable: () => boolean) {
     try {
       // 用 nodeDOM 从 pos 获取对应 DOM
       const nodePos = correctedFrom;
-      const nodeDom = view.nodeDOM(nodePos) as HTMLElement | null;
+      let nodeDom = view.nodeDOM(nodePos) as HTMLElement | null;
       if (nodeDom && nodeDom !== view.dom) {
-        focusedDom = nodeDom;
+        // 光标位于嵌套节点（如列表项内的段落）时，nodeDOM 返回的可能是嵌套节点，
+        // 需要向上回溯到 dom 的直接子节点，否则无法匹配 children 导致整篇变暗
+        while (nodeDom.parentElement && nodeDom.parentElement !== dom) {
+          nodeDom = nodeDom.parentElement;
+        }
+        if (nodeDom !== view.dom) {
+          focusedDom = nodeDom;
+        }
       }
     } catch {
       /* ignore */
@@ -78,8 +85,10 @@ export function attachFocusMode(view: EditorView, enable: () => boolean) {
   };
 
   // 延迟一帧执行，确保 DOM 已更新
+  let rafId: number | null = null;
   const scheduleMark = () => {
-    requestAnimationFrame(onSelChange);
+    if (rafId != null) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(onSelChange);
   };
 
   dom.addEventListener("keyup", scheduleMark);
@@ -89,6 +98,7 @@ export function attachFocusMode(view: EditorView, enable: () => boolean) {
   scheduleMark();
 
   return () => {
+    if (rafId != null) cancelAnimationFrame(rafId);
     dom.removeEventListener("keyup", scheduleMark);
     dom.removeEventListener("click", scheduleMark);
     clearMarks();

@@ -2,24 +2,46 @@ import { useEffect, useRef, useCallback } from "react";
 import { listen, emit } from "../ipc";
 import { useAppStore } from "../store/useAppStore";
 
+type CloseState = "idle" | "confirming" | "closing";
+
+export interface CloseRequestHandlerDeps {
+  hasDirtyTabs: () => boolean;
+  closeAllTabs: () => void;
+  readyToClose: () => void;
+}
+
+export interface CloseRequestHandler {
+  (): void;
+  reset: () => void;
+  getState: () => CloseState;
+}
+
+export function createCloseRequestHandler(deps: CloseRequestHandlerDeps): CloseRequestHandler {
+  let state: CloseState = "idle";
+  const handler = (() => {
+    if (state !== "idle") return;
+    if (!deps.hasDirtyTabs()) {
+      state = "closing";
+      deps.readyToClose();
+      return;
+    }
+    state = "confirming";
+    deps.closeAllTabs();
+  }) as CloseRequestHandler;
+  handler.reset = () => {
+    state = "idle";
+  };
+  handler.getState = () => state;
+  return handler;
+}
+
 type UnsubFn = () => void;
 
-/**
- * 监听主进程关闭请求，处理未保存标签。
- * 流程：
- * 1. 主进程发送 close-request
- * 2. 检查是否有 dirty 标签
- * 3. 无 → 直接回复 ready-to-close
- * 4. 有 → 走 closeAllTabs 的 pendingConfirm 流程
- *    → 全部处理完后回复 ready-to-close
- */
 export function useWindowClose() {
-  const handlingRef = useRef(false);
-  // 跟踪所有活跃的订阅，确保清理
+  const handlingRef = useRef<CloseRequestHandler | null>(null);
   const subsRef = useRef<UnsubFn[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 清理所有订阅和定时器
   const cleanup = useCallback(() => {
     for (const unsub of subsRef.current) {
       try {
@@ -36,53 +58,49 @@ export function useWindowClose() {
   }, []);
 
   useEffect(() => {
-    const un = listen("close-request", () => {
-      if (handlingRef.current) return;
-      handlingRef.current = true;
-
-      const state = useAppStore.getState();
-      const dirtyCount = state.tabs.filter((t) => t.dirty).length;
-
-      if (dirtyCount === 0) {
-        handlingRef.current = false;
-        emit("ready-to-close");
-        return;
-      }
-
-      // 清理之前的订阅和定时器（保险起见）
-      cleanup();
-
-      // 监听 tabs 全部清空 → 关闭完成
-      const unsub1 = useAppStore.subscribe((s) => {
-        if (s.tabs.length === 0 && !s.pendingConfirm) {
+    const handler = createCloseRequestHandler({
+      hasDirtyTabs: () => useAppStore.getState().tabs.some((tab) => tab.dirty),
+      closeAllTabs: () => {
+        const state = useAppStore.getState();
+        const unsubDone = useAppStore.subscribe((next) => {
+          if (next.tabs.length === 0 && !next.pendingConfirm) {
+            cleanup();
+            handler.reset();
+            emit("ready-to-close");
+          }
+        });
+        const unsubCancel = useAppStore.subscribe((next) => {
+          // closeFlow === "closing" 表示 closeAllTabs 确认链进行中：
+          // onSave/onDiscard 清 pendingConfirm 属于正常流程，不能当作取消。
+          if (!next.pendingConfirm && next.tabs.length > 0 && next.closeFlow === "idle") {
+            // 用户取消了关闭（仍有标签页）：通知主进程重置关闭流程，避免兜底强杀
+            emit("close-cancel");
+            cleanup();
+            handler.reset();
+          }
+        });
+        subsRef.current.push(unsubDone, unsubCancel);
+        state.closeAllTabs();
+        timerRef.current = setTimeout(() => {
+          const state = useAppStore.getState();
+          // 如果有未完成的确认对话框，不强制关闭，等待用户响应
+          if (state.pendingConfirm) return;
           cleanup();
-          handlingRef.current = false;
+          handler.reset();
           emit("ready-to-close");
-        }
-      });
-      subsRef.current.push(unsub1);
+        }, 10000);
+      },
+      readyToClose: () => emit("ready-to-close"),
+    });
+    handlingRef.current = handler;
 
-      // 监听用户取消 → 重置状态
-      const unsub2 = useAppStore.subscribe((s) => {
-        if (!s.pendingConfirm && s.tabs.length > 0 && handlingRef.current) {
-          cleanup();
-          handlingRef.current = false;
-        }
-      });
-      subsRef.current.push(unsub2);
-
-      state.closeAllTabs();
-
-      // 超时兜底：10秒后强制重置状态并清理
-      timerRef.current = setTimeout(() => {
-        cleanup();
-        handlingRef.current = false;
-        // 超时后不发送 ready-to-close，让主进程决定
-      }, 10000);
+    const un = listen("close-request", () => {
+      handlingRef.current?.();
     });
 
     return () => {
       cleanup();
+      handlingRef.current = null;
       void un.then((fn) => fn());
     };
   }, [cleanup]);

@@ -1,10 +1,11 @@
 /**
  * Store 类型定义
  *
- * �?useAppStore.ts 中提取的所有接口和类型�?
- * 便于各模块独立引用，减少循环依赖�?
+ * 从 useAppStore.ts 中提取的所有接口和类型
+ * 便于各模块独立引用，减少循环依赖
  */
 import type { EditorView } from "prosemirror-view";
+import type { ChatMessage } from "../ai/aiService";
 
 export type ThemeMode = "light" | "dark" | "sepia" | "nord";
 
@@ -12,25 +13,27 @@ export type FileKind = "markdown" | "code" | "image" | "binary" | "unknown";
 
 export interface Tab {
   id: string;
-  path: string | null; // null = 未保存的新文�?
+  path: string | null; // null = 未保存的新文件
   name: string;
   kind: FileKind;
   language: string; // 高亮语言 id
-  content: string; // 文本内容（markdown/code�?
+  content: string; // 文本内容（markdown/code）
   encoding: string; // "utf-8" | "gbk" | "utf-16le" ...
   lineEnding: "lf" | "crlf";
   dirty: boolean;
-  imageData?: string; // base64 data URL（image 类型�?
+  /** Monotonic in-memory revision used to guard asynchronous saves. */
+  revision: number;
+  imageData?: string; // base64 data URL（image 类型）
   imageMime?: string;
   size?: number; // binary 类型
-  hexPreview?: string; // binary 类型的十六进制预�?
-  /** 光标位置（字符偏移），切换标签时保存/恢复，null 表示未记�?*/
+  hexPreview?: string; // binary 类型的十六进制预览
+  /** 光标位置（字符偏移），切换标签时保存/恢复，null 表示未记录 */
   cursor?: number | null;
   /** 滚动位置（像素），切换标签时保存/恢复 */
   scrollTop?: number;
 }
 
-/** CodeEditor 向查找替换面板暴露的适配接口�?*/
+/** CodeEditor 向查找替换面板暴露的适配接口 */
 export interface CodeEditorApi {
   getText: () => string;
   setText: (t: string) => void;
@@ -49,12 +52,10 @@ export interface PendingConfirm {
   onSave: () => void;
   onDiscard: () => void;
   onCancel: () => void;
-}
-
-export interface RecentFile {
-  path: string;
-  name: string;
-  openedAt: number;
+  /** 按钮文案覆盖（默认取 i18n 的 unsaved.*） */
+  saveLabel?: string;
+  discardLabel?: string;
+  cancelLabel?: string;
 }
 
 export interface DirEntry {
@@ -70,6 +71,17 @@ export interface FsChangeEvent {
   path: string;
   eventType?: string;
   id?: string;
+  source?: "external" | "self";
+}
+
+/** AI 聊天会话（持久化于 localStorage） */
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  projectDir: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Settings {
@@ -79,15 +91,16 @@ export interface Settings {
   focusMode: boolean;
   typewriterMode: boolean;
   sourceMode: boolean;
-  readingMode: boolean; // 阅读模式：只�?
-  spellcheck: boolean; // 拼写检�?
+  readingMode: boolean; // 阅读模式：只读
+  spellcheck: boolean; // 拼写检查
   sidebarVisible: boolean;
   outlineVisible: boolean;
-  sidebarWidth: number; // 侧边栏宽度（px�?
+  sidebarWidth: number; // 侧边栏宽度（px）
+  vimMode?: boolean;
 }
 
 export interface AppState {
-  // ===== 多标�?=====
+  // ===== 多标签 =====
   tabs: Tab[];
   activeTabId: string | null;
 
@@ -101,9 +114,6 @@ export interface AppState {
   // 主题
   theme: ThemeMode;
 
-  // 最近文�?
-  recentFiles: RecentFile[];
-
   // 工作区（文件树）
   workspaceRoot: string | null;
   entriesByDir: Record<string, DirEntry[]>;
@@ -111,7 +121,8 @@ export interface AppState {
   selectedPath: string | null;
   watchId: string | null;
 
-  // 自动保存计时�?
+  // 自动保存计时器
+  /** @deprecated Autosave scheduling lives in useAutoSave; retained for API compatibility. */
   autoSaveTimer: number | null;
 
   // 设置
@@ -120,7 +131,7 @@ export interface AppState {
   // 文件外部修改提示
   externalChanges: Record<string, FsChangeEvent>;
 
-  // UI 面板状�?
+  // UI 面板状态
   findReplaceOpen: boolean;
   setFindReplaceOpen: (open: boolean) => void;
   quickOpenOpen: boolean;
@@ -131,8 +142,13 @@ export interface AppState {
   setCommandPaletteOpen: (open: boolean) => void;
   diffViewOpen: boolean;
   setDiffViewOpen: (open: boolean) => void;
+  graphViewOpen: boolean;
+  setGraphViewOpen: (open: boolean) => void;
   pendingConfirm: PendingConfirm | null;
   clearPendingConfirm: () => void;
+  /** 窗口关闭确认链状态：closing 表示 closeAllTabs 确认链进行中（此时清 pendingConfirm 不应触发 close-cancel） */
+  closeFlow: "idle" | "closing";
+  setCloseFlow: (v: "idle" | "closing") => void;
   settingsPanelOpen: boolean;
   setSettingsPanelOpen: (open: boolean) => void;
 
@@ -140,18 +156,24 @@ export interface AppState {
   splitViewOpen: boolean;
   toggleSplitView: () => void;
 
-  // 编辑�?
+  // 编辑器
   editorView: EditorView | null;
   setEditorView: (v: EditorView | null) => void;
+  /** Milkdown 注册的高效 markdown 插入函数（仅解析新内容，避免全量 re-parse） */
+  insertMarkdownFn: ((markdown: string) => void) | null;
+  setInsertMarkdownFn: (fn: ((markdown: string) => void) | null) => void;
+  /** 向当前文档末尾追加 markdown；若 Milkdown 未就绪则回退到 setContent */
+  insertMarkdownAtCursor: (markdown: string) => void;
 
   // AI 助手
   
   // ===== AI 聊天会话 =====
-  aiSessions: import("./useAppStore").ChatSession[];
+  aiSessions: ChatSession[];
   aiActiveSessionId: string | null;
   createAiSession: (projectDir?: string) => string;
   deleteAiSession: (id: string) => void;
   setAiActiveSession: (id: string | null) => void;
+  updateAiSessionMessages: (id: string, messages: ChatMessage[]) => void;
   aiAssistantOpen: boolean;
   setAiAssistantOpen: (open: boolean) => void;
 
@@ -187,11 +209,11 @@ export interface AppState {
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
 
-  pushRecent: (path: string) => void;
-
-  // 工作�?
+  // 工作区
   openWorkspace: (dir: string) => Promise<void>;
   closeWorkspace: () => void;
+  /** 清理工作区相关全部状态（watcher/主进程 root/文件树/持久化），恢复到无工作区的一致状态 */
+  resetWorkspaceState: () => void;
   toggleExpanded: (path: string) => Promise<void>;
   loadDir: (path: string) => Promise<void>;
   selectPath: (path: string) => void;
@@ -214,6 +236,7 @@ export interface AppState {
   toggleSource: () => void;
   toggleReading: () => void;
   toggleSpellcheck: () => void;
+  toggleVimMode: () => void;
   toggleSidebar: () => void;
   toggleOutline: () => void;
 

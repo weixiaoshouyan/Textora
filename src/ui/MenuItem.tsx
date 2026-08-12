@@ -1,20 +1,17 @@
 import type { ReactNode } from "react";
 
-/**
- * 共享右键菜单项组件
- * 
- * 用于 TabBar、FileTree 等场景的右键菜单。
- */
 export function MenuItem({
   children,
   onClick,
   icon,
   disabled,
+  shortcut,
 }: {
   children: ReactNode;
   onClick: () => void;
   icon?: ReactNode;
   disabled?: boolean;
+  shortcut?: string;
 }) {
   return (
     <div
@@ -38,7 +35,20 @@ export function MenuItem({
           {icon}
         </span>
       )}
-      <span>{children}</span>
+      <span style={{ flex: 1 }}>{children}</span>
+      {shortcut && (
+        <span
+          style={{
+            fontSize: 11,
+            opacity: 0.6,
+            fontFamily: "ui-monospace, monospace",
+            minWidth: 40,
+            textAlign: "right",
+          }}
+        >
+          {shortcut}
+        </span>
+      )}
     </div>
   );
 }

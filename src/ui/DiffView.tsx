@@ -81,7 +81,7 @@ export function DiffView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const swap = useCallback(() => {
     setPathA(pathB);

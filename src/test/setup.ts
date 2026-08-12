@@ -20,11 +20,13 @@ const mockTextora = {
     close: vi.fn(),
     setTitle: vi.fn(),
   },
+  getPathForFile: vi.fn().mockReturnValue(""),
 };
 
 Object.defineProperty(window, "textora", {
   value: mockTextora,
   writable: true,
+  configurable: true,
 });
 
 // Mock matchMedia

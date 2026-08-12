@@ -24,6 +24,7 @@ export function extractOutline(markdown: string): OutlineItem[] {
   const out: OutlineItem[] = [];
   let inFence = false;
   let fenceChar = ""; // "`" 或 "~"
+  let fenceLength = 0; // 开启围栏的长度，关闭时必须 >= 此长度
 
   // 预计算行偏移（每行起始字符在 markdown 中的位置）
   const lineOffsets: number[] = new Array(lines.length);
@@ -36,16 +37,19 @@ export function extractOutline(markdown: string): OutlineItem[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // 围栏代码块：开闭必须用相同字符
+    // 围栏代码块：开闭必须用相同字符，且关闭围栏长度 >= 开启围栏长度
     const fenceMatch = line.match(FENCE_OPEN_RE);
     if (fenceMatch) {
       const ch = fenceMatch[1][0];
+      const len = fenceMatch[1].length;
       if (!inFence) {
         inFence = true;
         fenceChar = ch;
-      } else if (ch === fenceChar) {
+        fenceLength = len;
+      } else if (ch === fenceChar && len >= fenceLength) {
         inFence = false;
         fenceChar = "";
+        fenceLength = 0;
       }
       continue;
     }

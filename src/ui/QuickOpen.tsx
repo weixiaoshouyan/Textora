@@ -26,6 +26,8 @@ export function QuickOpen() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // 加载序号：快速开关面板时丢弃过期响应，防止旧列表覆盖新列表
+  const loadSeqRef = useRef(0);
   useFocusTrap(containerRef, open);
 
   useEffect(() => {
@@ -36,11 +38,18 @@ export function QuickOpen() {
       setFiles([]);
       return;
     }
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     invoke<FileEntry[]>("list_all_files", { root: workspaceRoot })
-      .then((list) => setFiles(list))
-      .catch(() => setFiles([]))
-      .finally(() => setLoading(false));
+      .then((list) => {
+        if (seq === loadSeqRef.current) setFiles(list ?? []);
+      })
+      .catch(() => {
+        if (seq === loadSeqRef.current) setFiles([]);
+      })
+      .finally(() => {
+        if (seq === loadSeqRef.current) setLoading(false);
+      });
   }, [open, workspaceRoot]);
 
   useEffect(() => {
@@ -81,6 +90,7 @@ export function QuickOpen() {
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      if (filtered.length === 0) return;
       setIndex((i) => Math.min(i + 1, filtered.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -99,7 +109,7 @@ export function QuickOpen() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] backdrop-blur-sm transition-opacity"
       style={{ background: "rgba(0,0,0,0.25)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
@@ -107,8 +117,7 @@ export function QuickOpen() {
     >
       <div
         ref={containerRef}
-        className="textora-card w-[480px] max-w-[90vw] overflow-hidden"
-        style={{ background: "var(--textora-bg-elev)" }}
+        className="textora-card textora-glass animate-pop-in w-[480px] max-w-[90vw] overflow-hidden rounded-xl"
       >
         <input
           ref={inputRef}

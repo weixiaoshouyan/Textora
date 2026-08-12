@@ -7,7 +7,6 @@ import type { ThemeMode, Settings, Tab, AppState } from "./types";
 
 // ===== 存储键 =====
 export const THEME_KEY = "textora.theme";
-export const RECENT_KEY = "textora.recent";
 export const SETTINGS_KEY = "textora.settings";
 export const WORKSPACE_KEY = "textora.workspace";
 export const SESSION_KEY = "textora.session";
@@ -25,14 +24,23 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarVisible: true,
   outlineVisible: true,
   sidebarWidth: 240,
+  vimMode: false,
 };
 
 // ===== localStorage 安全读写 =====
-export function safeReadLocal<T>(key: string, fallback: T): T {
+/**
+ * 读取 localStorage 中的 JSON 值。
+ * 注意：JSON.parse 对 "null" / "{}" / "0" 等都会成功返回，仅靠 try/catch 挡不住
+ * "解析成功但类型不符" 的损坏数据（旧版本数据、写入中途失败、清理工具部分清除）。
+ * 调用方可传入 validate 做结构校验，校验失败时回退到 fallback，避免渲染层崩溃。
+ */
+export function safeReadLocal<T>(key: string, fallback: T, validate?: (v: unknown) => boolean): T {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
-    return JSON.parse(raw) as T;
+    const parsed: unknown = JSON.parse(raw);
+    if (validate && !validate(parsed)) return fallback;
+    return parsed as T;
   } catch {
     return fallback;
   }
@@ -41,8 +49,20 @@ export function safeReadLocal<T>(key: string, fallback: T): T {
 export function safeWriteLocal(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn(`[safeWriteLocal] Storage write failed for key "${key}":`, err);
+    try {
+      // If AI sessions grow too large, retain only the recent 10 sessions and truncate old message history
+      if (key === "textora.ai_sessions" && Array.isArray(value)) {
+        const trimmed = (value as Array<any>).slice(0, 10).map(s => ({
+          ...s,
+          messages: (s.messages || []).slice(-30),
+        }));
+        localStorage.setItem(key, JSON.stringify(trimmed));
+      }
+    } catch {
+      // ignore secondary failure
+    }
   }
 }
 
@@ -56,10 +76,6 @@ export function detectInitialTheme(): ThemeMode {
     window.matchMedia &&
     window.matchMedia("(prefers-color-scheme: dark)").matches;
   return prefersDark ? "dark" : "light";
-}
-
-export function applyThemeToDom(theme: ThemeMode): void {
-  document.documentElement.setAttribute("data-theme", theme);
 }
 
 // ===== 路径工具 =====

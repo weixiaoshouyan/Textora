@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { useLocale, tFor } from "../i18n";
 import type { EditorView } from "@milkdown/prose/view";
+import { LARGE_FILE_THRESHOLD } from "../plugins/shikiClient";
 
 const ENCODINGS = ["utf-8", "utf-16le", "utf-16be", "gbk", "big5", "shift_jis", "euc-kr", "windows-1252"];
 
@@ -30,6 +31,7 @@ export function StatusBar() {
   const language = useAppStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.language ?? "");
   const kind = useAppStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.kind ?? "");
   const showCodeStats = kind === "code" || kind === "markdown";
+  const isLargeFile = content.length > LARGE_FILE_THRESHOLD || content.split("\n").length > 5000;
 
   useEffect(() => {
     const trimmed = content.trim();
@@ -57,8 +59,10 @@ export function StatusBar() {
     const doc = view.state.doc;
     let line = 1;
     let col = 1;
-    const text = doc.textContent;
-    for (let i = 0; i < from && i < text.length; i++) {
+    // 只取选区前的文本计算行/列，避免每次光标移动都构建整篇 textContent。
+    // selectionchange 在打字/拖动选区时高频触发，大文档下 O(整篇) 会造成明显卡顿。
+    const text = doc.textBetween(0, Math.max(0, Math.min(from, doc.content.size)), "\n");
+    for (let i = 0; i < text.length; i++) {
       if (text[i] === "\n") {
         line++;
         col = 1;
@@ -224,7 +228,7 @@ export function StatusBar() {
                           enc === encoding ? "var(--textora-bg-muted)" : "transparent")
                       }
                       onClick={() => {
-                        useAppStore.getState().setActiveEncoding(enc, false);
+                        useAppStore.getState().setActiveEncoding(enc, true);
                         setEncMenuOpen(false);
                       }}
                     >
@@ -243,6 +247,23 @@ export function StatusBar() {
             >
               {insertMode}
             </span>
+            {/* 大文件虚拟滚动指示器 */}
+            {isLargeFile && (
+              <span
+                style={{
+                  marginRight: 4,
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  background: "var(--textora-accent)",
+                  color: "var(--textora-accent-fg)",
+                  fontSize: 10,
+                  fontWeight: 600,
+                }}
+                title="大文件模式：已启用虚拟滚动优化"
+              >
+                LARGE
+              </span>
+            )}
           </>
         )}
       </span>
