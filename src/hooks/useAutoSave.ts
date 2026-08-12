@@ -1,55 +1,64 @@
-import { useEffect, useRef } from "react";
-import { useAppStore, getActiveTab } from "../store/useAppStore";
+import { useEffect } from "react";
+import { useAppStore } from "../store/useAppStore";
 
-/**
- * 自动保存 hook：当 autoSaveSeconds > 0 时，定时保存当前标签。
- * 保存间隔在 settings.autoSaveSeconds 中配置。
- */
+interface AutoSaveTimer {
+  timer: number;
+  revision: number;
+  path: string;
+}
+
+/** Schedule independent autosave timers for each dirty, named tab. */
 export function useAutoSave() {
-  const timerRef = useRef<number | null>(null);
-
   useEffect(() => {
-    function clearTimer() {
-      if (timerRef.current) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
+    // 定时器表只在 effect 作用域内使用：cleanup 闭包引用的是本作用域的局部
+    // 变量，避免 react-hooks 对 `ref.current` 延迟读取的误报，也保证清理的是
+    // 本次 effect 实例创建的定时器。
+    const timers = new Map<string, AutoSaveTimer>();
+
+    function clearTimer(tabId: string) {
+      const entry = timers.get(tabId);
+      if (entry !== undefined) {
+        window.clearTimeout(entry.timer);
+        timers.delete(tabId);
       }
     }
 
     function schedule() {
-      clearTimer();
-      const { settings } = useAppStore.getState();
-      const tab = getActiveTab(useAppStore.getState());
-      if (settings.autoSaveSeconds > 0 && tab?.path && tab.dirty) {
-        timerRef.current = window.setTimeout(() => {
-          void useAppStore.getState().saveFile();
-          schedule();
-        }, settings.autoSaveSeconds * 1000);
+      const state = useAppStore.getState();
+      const enabled = state.settings.autoSaveSeconds > 0;
+      const delay = state.settings.autoSaveSeconds * 1000;
+      const liveIds = new Set<string>();
+
+      for (const tab of state.tabs) {
+        if (!enabled || !tab.path || !tab.dirty) {
+          clearTimer(tab.id);
+          continue;
+        }
+        liveIds.add(tab.id);
+        const existing = timers.get(tab.id);
+        if (existing && existing.revision === tab.revision && existing.path === tab.path) continue;
+        if (existing) clearTimer(tab.id);
+        const timer = window.setTimeout(() => {
+          timers.delete(tab.id);
+          void useAppStore.getState().saveTab(tab.id).catch(() => {
+            // saveTab keeps the tab dirty and shows the save error.
+          });
+        }, delay);
+        timers.set(tab.id, { timer, revision: tab.revision, path: tab.path });
+      }
+
+      for (const tabId of timers.keys()) {
+        if (!liveIds.has(tabId)) clearTimer(tabId);
       }
     }
 
-    // 监听设置变化和内容变化
-    const unsubSettings = useAppStore.subscribe((s, prev) => {
-      if (s.settings.autoSaveSeconds !== prev.settings.autoSaveSeconds) {
-        schedule();
-      }
-    });
-
-    // 监听内容变化（dirty 状态变化）
-    const unsubDirty = useAppStore.subscribe((s, prev) => {
-      const currTab = getActiveTab(s);
-      const prevTab = getActiveTab(prev);
-      if (currTab?.dirty !== prevTab?.dirty || currTab?.id !== prevTab?.id) {
-        schedule();
-      }
-    });
-
+    const unsubscribe = useAppStore.subscribe(schedule);
     schedule();
 
     return () => {
-      clearTimer();
-      unsubSettings();
-      unsubDirty();
+      for (const entry of timers.values()) window.clearTimeout(entry.timer);
+      timers.clear();
+      unsubscribe();
     };
   }, []);
 }
