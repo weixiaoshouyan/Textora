@@ -2,7 +2,7 @@ import { Component, useEffect, lazy, Suspense, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useAppStore, getActiveTab } from "./store/useAppStore";
 import { useLocale, tFor, initSystemLocale } from "./i18n";
-import { TopBar } from "./ui/TopBar";
+import { TopBar } from "./ui/topbar";
 import { StatusBar } from "./ui/StatusBar";
 import { Sidebar } from "./ui/Sidebar";
 import { Welcome } from "./ui/Welcome";

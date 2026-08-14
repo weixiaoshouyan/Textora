@@ -9,10 +9,11 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useAppStore, getActiveTab, type ChatSession } from "../store/useAppStore";
+import { useAppStore, type ChatSession } from "../store/useAppStore";
 import { chat, type ChatMessage } from "../ai/aiService";
 import { confirmAiToolCall } from "../ai/confirmToolCall";
 import { useLocale, tFor } from "../i18n";
+import { extractDocumentContext, buildProjectContext } from "./ai/chatLogic";
 import { openDialog } from "../ipc";
 
 // ===== 快捷指令的系统提示 =====
@@ -165,53 +166,11 @@ export function AiAssistant() {
     }
   }, [workspaceRoot, projectDir]);
 
-  /**
-   * 提取当前文档上下文，优先「选区内容」→「光标附近 ±2000 字符」→ 文档开头。
-   * 整篇长文档直接截断前 4000 字符往往丢失 AI 真正需要关心的部分；
-   * 基于光标位置裁剪让模型看到正在编辑的上下文。
-   */
-  const getDocContext = useCallback((): string => {
-    const s = useAppStore.getState();
-    if (!getActiveTab(s)) return "";
-    // WYSIWYG（Milkdown）：从 ProseMirror 文档取选区/光标
-    const view = s.editorView;
-    if (view?.state) {
-      const { from, to } = view.state.selection;
-      const doc = view.state.doc;
-      const size = doc.content.size;
-      if (from !== to) {
-        const sel = doc.textBetween(from, to, "\n", "\n");
-        if (sel.trim()) return `[选中内容]\n${sel.slice(0, 4000)}`;
-      }
-      const before = doc.textBetween(Math.max(0, from - 2000), from, "\n", "\n");
-      const after = doc.textBetween(to, Math.min(size, to + 2000), "\n", "\n");
-      return `[光标前 2000 字符]\n${before}\n[光标后 2000 字符]\n${after}`;
-    }
-    // 源码/代码模式：textarea
-    const ta = document.querySelector(".textora-code-textarea") as HTMLTextAreaElement | null;
-    if (ta) {
-      const pos = ta.selectionStart;
-      const end = ta.selectionEnd;
-      const text = ta.value;
-      if (pos !== end) {
-        const sel = text.slice(pos, end);
-        if (sel.trim()) return `[选中内容]\n${sel.slice(0, 4000)}`;
-      }
-      const before = text.slice(Math.max(0, pos - 2000), pos);
-      const after = text.slice(end, end + 2000);
-      return `[光标前 2000 字符]\n${before}\n[光标后 2000 字符]\n${after}`;
-    }
-    // 回退：文档开头
-    return content.slice(0, 4000);
-  }, [content]);
+  // 文档/项目上下文提取逻辑见 ./ai/chatLogic.ts（纯函数，可单测）
+  const getDocContext = useCallback((): string => extractDocumentContext(content), [content]);
 
-  const buildProjectContext = useCallback((): string => {
-    if (!projectDir) return "";
-    const ws = workspaceRoot || "";
-    const parts: string[][] = [];
-    if (ws) parts.push(["Project root:", ws]);
-    if (projectDir) parts.push(["Selected project directory:", projectDir]);
-    return parts.map(([k, v]) => k + "\n" + v).join("\n\n");
+  const buildProjectContextCb = useCallback((): string => {
+    return buildProjectContext(projectDir, workspaceRoot || "");
   }, [projectDir, workspaceRoot]);
 
   const runChat = useCallback(
@@ -247,7 +206,7 @@ export function AiAssistant() {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const projectContext = buildProjectContext();
+        const projectContext = buildProjectContextCb();
         const docContext = getDocContext();
         const fullText = await chat({
           config: { apiKey: activeProvider.apiKey, endpoint: activeProvider.endpoint, model: activeProvider.model, enabled: true },
@@ -316,7 +275,7 @@ export function AiAssistant() {
         }
       }
     },
-    [activeProvider, buildProjectContext, getDocContext, setSettingsPanelOpen, createAiSession, updateAiSessionMessages, insertMarkdownAtCursor, projectDir, workspaceRoot, appendStreaming]
+    [activeProvider, buildProjectContextCb, getDocContext, setSettingsPanelOpen, createAiSession, updateAiSessionMessages, insertMarkdownAtCursor, projectDir, workspaceRoot, appendStreaming]
   );
 
   const handleSend = () => {

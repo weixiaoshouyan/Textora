@@ -215,16 +215,37 @@ npm run test:coverage    # 覆盖率报告
 │   ├── main/                  # Electron 主进程（IPC / 安全层 / 菜单）
 │   ├── plugins/               # Milkdown 插件（math / mermaid / shiki / 折叠 / 快捷键）
 │   ├── shared/                # 主/渲染共享（常量 / 正则防护）
-│   ├── store/                 # Zustand（tabs / workspace / AI / UI 切片）
+│   ├── store/
+│   │   ├── slices/file/       # 文件切片（editing / saving / tabs / fs 子模块）
+│   │   └── ...                # 其他切片
 │   ├── test/                  # Vitest 单元测试（27 文件 / 219 用例）
 │   └── ui/
+│       ├── ai/                # AI 面板（chatLogic 纯函数 / 组件）
 │       ├── fileTree/          # 文件树（Entry 节点 / icons / utils）
 │       ├── settings/          # 设置面板（按分类拆分 section）
+│       ├── topbar/            # 顶栏（items 子组件 / 主组件）
 │       └── ...                # 其他组件
 ├── electron-builder.yml       # 打包配置（NSIS / asarUnpack）
 ├── playwright.config.mts      # E2E 配置
 └── vite.config.mts            # 渲染层构建
 ```
+
+### 模块化约定
+
+大文件按功能域拆分为聚焦模块，每个模块目录用 `index.ts` 统一出口，外部只依赖目录入口：
+
+| 功能域 | 模块 | 定位入口 |
+|---|---|---|
+| i18n | `zh.ts` / `en.ts` / `index.ts` | 缺翻译 → 对应字典文件 |
+| 右键菜单 | `contextMenu/actions.ts`（命令）+ `menu.ts`（结构） | 菜单项 → menu；命令行为 → actions |
+| 源码编辑器 | `codeEditor/`（fold / brackets / snippets / utils） | 折叠 → fold.ts；括号 → brackets.ts |
+| 设置面板 | `settings/`（按分类 section + controls） | 按分类直接定位 |
+| 文件树 | `fileTree/`（Entry / icons / utils） | 节点交互 → Entry.tsx |
+| 文件切片 | `store/slices/file/`（editing / saving / tabs / fs） | 保存 → saving.ts；标签 → tabs.ts |
+| 顶栏 | `topbar/`（items / 主组件） | 菜单项组件 → items.tsx |
+| AI 面板 | `ai/chatLogic.ts`（上下文提取纯函数） | 上下文逻辑 → chatLogic.ts |
+
+问题定位路径示例：设置面板 AI 分类异常 → `ui/settings/AISection.tsx`；自动保存丢数据 → `store/slices/file/saving.ts`；右键菜单缺项 → `editor/contextMenu/menu.ts`。
 
 ---
 

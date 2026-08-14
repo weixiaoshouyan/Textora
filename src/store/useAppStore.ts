@@ -10,7 +10,7 @@ import {
 } from "./helpers";
 import { SESSION_RESTORE } from "../shared/constants";
 import { aiSlice } from "./slices/aiSlice";
-import { fileSlice } from "./slices/fileSlice";
+import { fileSlice } from "./slices/file";
 import { uiSlice } from "./slices/uiSlice";
 import { workspaceSlice } from "./slices/workspaceSlice";
 import { createWatcherManager } from "./slices/watcher";
