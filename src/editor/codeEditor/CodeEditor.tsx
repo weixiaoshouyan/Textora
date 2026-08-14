@@ -1,156 +1,23 @@
+/**
+ * 源码/代码编辑器（textarea 叠加高亮层）。
+ *
+ * 模块拆分：
+ *  - ./fold.ts        折叠范围计算
+ *  - ./brackets.ts    括号匹配
+ *  - ./snippets.ts    代码片段
+ *  - ./utils.ts       通用工具（escapeHtml / getUniqueWords）
+ */
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { useAppStore, type CodeEditorApi } from "../store/useAppStore";
-import { codeToHtmlSafe, LARGE_FILE_THRESHOLD, setShikiTheme } from "../plugins/shikiClient";
-import { isDangerousRegex } from "../shared/safeRegex";
-import { ContextMenu } from "../ui/ContextMenu";
-import { buildEditorMenu } from "./editorContextMenu";
-import { lineOps } from "./lineOps";
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-// ============================================================
-// Types
-// ============================================================
-
-interface FoldRange {
-  startLine: number;
-  endLine: number;
-  folded: boolean;
-}
-
-interface BracketPair {
-  line1: number;
-  col1: number;
-  line2: number;
-  col2: number;
-}
-
-// ============================================================
-// Utilities
-// ============================================================
-
-const BRACKET_MAP: Record<string, string> = { "(": ")", "{": "}", "[": "]" };
-const CLOSING_BRACKETS: Record<string, string> = { ")": "(", "}": "{", "]": "[" };
-
-function posToLineCol(text: string, pos: number): { line: number; col: number } {
-  let line = 0;
-  let col = 0;
-  for (let i = 0; i < pos && i < text.length; i++) {
-    if (text[i] === "\n") { line++; col = 0; } else { col++; }
-  }
-  return { line, col };
-}
-
-function findMatchingBracket(text: string, line: number, col: number, lines: string[]) {
-  if (line >= lines.length) return null;
-  const lineText = lines[line];
-  if (col >= lineText.length) return null;
-  const ch = lineText[col];
-
-  if (BRACKET_MAP[ch]) {
-    const open = ch; const close = BRACKET_MAP[ch];
-    let depth = 1;
-    for (let l = line; l < lines.length; l++) {
-      const sc = l === line ? col + 1 : 0;
-      for (let c = sc; c < lines[l].length; c++) {
-        if (lines[l][c] === open) depth++;
-        else if (lines[l][c] === close) { depth--; if (depth === 0) return { line: l, col: c }; }
-      }
-    }
-  } else if (CLOSING_BRACKETS[ch]) {
-    const close = ch; const open = CLOSING_BRACKETS[ch];
-    let depth = 1;
-    for (let l = line; l >= 0; l--) {
-      const sc = l === line ? col - 1 : lines[l].length - 1;
-      for (let c = sc; c >= 0; c--) {
-        if (lines[l][c] === close) depth++;
-        else if (lines[l][c] === open) { depth--; if (depth === 0) return { line: l, col: c }; }
-      }
-    }
-  }
-  return null;
-}
-
-function computeFoldRanges(text: string, language: string): FoldRange[] {
-  const lines = text.split("\n");
-  const folds: FoldRange[] = [];
-
-  if (["javascript","typescript","java","c","cpp","csharp","go","rust","swift","kt","php","css","scss","json"].includes(language)) {
-    const stack: number[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      for (const ch of lines[i]) {
-        if (ch === "{") stack.push(i);
-        else if (ch === "}" && stack.length > 0) {
-          const start = stack.pop()!;
-          if (i > start) folds.push({ startLine: start, endLine: i, folded: false });
-        }
-      }
-    }
-  }
-
-  if (["python","yaml"].includes(language)) {
-    const stack: { line: number; indent: number }[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^(\s*)\S/);
-      if (!m) continue;
-      const indent = m[1].length;
-      while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-        const e = stack.pop()!;
-        if (i - e.line > 1) folds.push({ startLine: e.line, endLine: i - 1, folded: false });
-      }
-      stack.push({ line: i, indent });
-    }
-    while (stack.length > 0) {
-      const e = stack.pop()!;
-      if (lines.length - 1 - e.line > 0) folds.push({ startLine: e.line, endLine: lines.length - 1, folded: false });
-    }
-  }
-
-  return folds;
-}
-
-function getUniqueWords(text: string): string[] {
-  const words = new Set<string>();
-  const re = /\b[a-zA-Z_$][a-zA-Z0-9_$]{2,}\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) words.add(m[0]);
-  return Array.from(words).sort();
-}
-
-const VIRTUAL_LINE_THRESHOLD = 5000;
-const VIRTUAL_BUFFER_LINES = 200;
-
-const SNIPPETS: Record<string, { prefix: string; body: string }[]> = {
-  javascript: [
-    { prefix: "log", body: "console.log($1);\n$0" },
-    { prefix: "fn", body: "function $1($2) {\n    $0\n}" },
-    { prefix: "af", body: "const $1 = ($2) => {\n    $0\n};" },
-    { prefix: "imp", body: "import { $1 } from '$2';\n$0" },
-    { prefix: "try", body: "try {\n    $1\n} catch (error) {\n    $0\n}" },
-    { prefix: "for", body: "for (let i = 0; i < $1; i++) {\n    $0\n}" },
-    { prefix: "if", body: "if ($1) {\n    $0\n}" },
-  ],
-  typescript: [
-    { prefix: "log", body: "console.log($1);\n$0" },
-    { prefix: "fn", body: "function $1($2): $3 {\n    $0\n}" },
-    { prefix: "iface", body: "interface $1 {\n    $0\n}" },
-    { prefix: "type", body: "type $1 = {\n    $0\n};" },
-    { prefix: "imp", body: "import { $1 } from '$2';\n$0" },
-  ],
-  python: [
-    { prefix: "def", body: "def $1($2):\n    $0" },
-    { prefix: "class", body: "class $1:\n    def __init__(self):\n        $0" },
-    { prefix: "ifmain", body: "if __name__ == \"__main__\":\n    $0" },
-    { prefix: "for", body: "for $1 in $2:\n    $0" },
-    { prefix: "try", body: "try:\n    $1\nexcept $2:\n    $0" },
-  ],
-  default: [],
-};
+import { useAppStore, type CodeEditorApi } from "../../store/useAppStore";
+import { codeToHtmlSafe, LARGE_FILE_THRESHOLD, setShikiTheme } from "../../plugins/shikiClient";
+import { isDangerousRegex } from "../../shared/safeRegex";
+import { ContextMenu } from "../../ui/ContextMenu";
+import { buildEditorMenu } from "../contextMenu";
+import { lineOps } from "../lineOps";
+import { escapeHtml, getUniqueWords } from "./utils";
+import { computeFoldRanges, VIRTUAL_LINE_THRESHOLD, VIRTUAL_BUFFER_LINES, type FoldRange } from "./fold";
+import { findMatchingBracket, posToLineCol, type BracketPair } from "./brackets";
+import { SNIPPETS } from "./snippets";
 
 // ============================================================
 // Component
@@ -296,7 +163,7 @@ export function CodeEditor({ content, language, onChange, readOnly = false }: Pr
     const checkAt = (l: number, c: number) => {
       if (l >= lines.length || c >= lines[l].length) return;
       const ch = lines[l][c];
-      if (BRACKET_MAP[ch] || CLOSING_BRACKETS[ch]) {
+      if (ch === "(" || ch === "{" || ch === "[" || ch === ")" || ch === "}" || ch === "]") {
         const match = findMatchingBracket(text, l, c, lines);
         if (match) { setBracketPair({ line1: l, col1: c, line2: match.line, col2: match.col }); return; }
       }

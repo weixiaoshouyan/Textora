@@ -8,12 +8,12 @@ import { Sidebar } from "./ui/Sidebar";
 import { Welcome } from "./ui/Welcome";
 // 编辑器组件体积大（Milkdown/mermaid/shiki ~12MB），懒加载避免首屏全量解析
 const MilkdownEditor = lazy(() => import("./editor/MilkdownEditor").then((m) => ({ default: m.MilkdownEditor })));
-const CodeEditor = lazy(() => import("./editor/CodeEditor").then((m) => ({ default: m.CodeEditor })));
+const CodeEditor = lazy(() => import("./editor/codeEditor").then((m) => ({ default: m.CodeEditor })));
 const SplitView = lazy(() => import("./ui/SplitView").then((m) => ({ default: m.SplitView })));
 import { ImageView, HexView } from "./editor/FileViewers";
 import { FindReplace } from "./ui/FindReplace";
 import { QuickOpen } from "./ui/QuickOpen";
-const SettingsPanel = lazy(() => import("./ui/SettingsPanel").then(m => ({ default: m.SettingsPanel })));
+const SettingsPanel = lazy(() => import("./ui/settings").then(m => ({ default: m.SettingsPanel })));
 import { TabBar } from "./ui/TabBar";
 import { CommandPalette } from "./ui/CommandPalette";
 import { SearchInFiles } from "./ui/SearchInFiles";

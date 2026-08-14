@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAppStore, getActiveTab } from "../store/useAppStore";
 import { MilkdownEditor } from "../editor/MilkdownEditor";
-import { CodeEditor } from "../editor/CodeEditor";
+import { CodeEditor } from "../editor/codeEditor";
 
 export function SplitView() {
   const content = useAppStore((s) => s.content);

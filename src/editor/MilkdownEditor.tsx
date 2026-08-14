@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { ContextMenu, CtxMenuItem } from "../ui/ContextMenu";
-import { buildEditorMenu } from "./editorContextMenu";
+import { buildEditorMenu } from "./contextMenu";
 import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx } from "@milkdown/core";
 import { commonmark } from "@milkdown/preset-commonmark";
 import { gfm } from "@milkdown/preset-gfm";

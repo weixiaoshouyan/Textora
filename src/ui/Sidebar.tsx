@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { FileTree } from "./FileTree";
+import { FileTree } from "./fileTree";
 import { Outline } from "./Outline";
 import { useAppStore } from "../store/useAppStore";
 import { useLocale, tFor } from "../i18n";

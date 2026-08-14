@@ -3,7 +3,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { TableToolbar } from "../editor/TableToolbar";
 import { InlineAiCopilot } from "../editor/InlineAiCopilot";
-import { CodeEditor } from "../editor/CodeEditor";
+import { CodeEditor } from "../editor/codeEditor";
 import type { EditorView } from "@milkdown/prose/view";
 
 // Mock EditorView

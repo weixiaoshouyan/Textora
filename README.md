@@ -202,19 +202,25 @@ npm run test:coverage    # 覆盖率报告
 ```
 .
 ├── docs/screenshots/          # 产品截图（README 用）
-├── e2e/                       # Playwright E2E 冒烟测试 + 截图脚本
+├── e2e/                       # Playwright E2E 冒烟测试 + 截图/回归脚本
 ├── src/
 │   ├── App.tsx                # 应用外壳（错误边界 / 全局浮层）
 │   ├── ai/                    # AI 服务（流式 / 工具调用 / 供应商配置）
-│   ├── editor/                # MilkdownEditor / CodeEditor / 图片 / 查找 / 导出
+│   ├── editor/
+│   │   ├── codeEditor/        # 源码编辑器（组件 + fold/brackets/snippets/utils 子模块）
+│   │   ├── contextMenu/       # 右键菜单（actions 命令 / menu 结构）
+│   │   └── ...                # MilkdownEditor / 图片 / 查找 / 导出
 │   ├── hooks/                 # 快捷键 / 自动保存 / 窗口关闭协议
-│   ├── i18n/                  # 中英文（355+ key）
+│   ├── i18n/                  # 中英文（zh.ts / en.ts 字典独立，index.ts 核心）
 │   ├── main/                  # Electron 主进程（IPC / 安全层 / 菜单）
 │   ├── plugins/               # Milkdown 插件（math / mermaid / shiki / 折叠 / 快捷键）
 │   ├── shared/                # 主/渲染共享（常量 / 正则防护）
 │   ├── store/                 # Zustand（tabs / workspace / AI / UI 切片）
 │   ├── test/                  # Vitest 单元测试（27 文件 / 219 用例）
-│   └── ui/                    # 组件（TopBar / FileTree / SettingsPanel / SearchInFiles...）
+│   └── ui/
+│       ├── fileTree/          # 文件树（Entry 节点 / icons / utils）
+│       ├── settings/          # 设置面板（按分类拆分 section）
+│       └── ...                # 其他组件
 ├── electron-builder.yml       # 打包配置（NSIS / asarUnpack）
 ├── playwright.config.mts      # E2E 配置
 └── vite.config.mts            # 渲染层构建
