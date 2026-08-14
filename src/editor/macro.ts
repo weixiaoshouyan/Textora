@@ -123,41 +123,45 @@ export class MacroPlayer {
     this.abortFlag = false;
     editor.focus();
 
-    for (const action of actions) {
-      if (this.abortFlag) break;
+    try {
+      for (const action of actions) {
+        if (this.abortFlag) break;
 
-      if (action.timestamp > 0) {
-        await new Promise(r => setTimeout(r, Math.min(action.timestamp, 500)));
-      }
-      if (this.abortFlag) break;
+        if (action.timestamp > 0) {
+          await new Promise(r => setTimeout(r, Math.min(action.timestamp, 500)));
+        }
+        if (this.abortFlag) break;
 
-      const text = editor.getText();
-      switch (action.type) {
-        case "insert": {
-          const pos = action.from ?? text.length;
-          const newText = text.slice(0, pos) + (action.text || "") + text.slice(pos);
-          editor.setText(newText);
-          const id = requestAnimationFrame(() => editor.select(pos + (action.text || "").length, pos + (action.text || "").length));
-          this.rafIds.push(id);
-          break;
-        }
-        case "delete": {
-          const from = action.from ?? 0;
-          const to = action.to ?? from;
-          const newText = text.slice(0, from) + text.slice(to);
-          editor.setText(newText);
-          const id = requestAnimationFrame(() => editor.select(from, from));
-          this.rafIds.push(id);
-          break;
-        }
-        case "select":
-        case "cursor": {
-          editor.select(action.from ?? 0, action.to ?? 0);
-          break;
+        const text = editor.getText();
+        switch (action.type) {
+          case "insert": {
+            const pos = action.from ?? text.length;
+            const newText = text.slice(0, pos) + (action.text || "") + text.slice(pos);
+            editor.setText(newText);
+            const id = requestAnimationFrame(() => editor.select(pos + (action.text || "").length, pos + (action.text || "").length));
+            this.rafIds.push(id);
+            break;
+          }
+          case "delete": {
+            const from = action.from ?? 0;
+            const to = action.to ?? from;
+            const newText = text.slice(0, from) + text.slice(to);
+            editor.setText(newText);
+            const id = requestAnimationFrame(() => editor.select(from, from));
+            this.rafIds.push(id);
+            break;
+          }
+          case "select":
+          case "cursor": {
+            editor.select(action.from ?? 0, action.to ?? 0);
+            break;
+          }
         }
       }
+    } finally {
+      // 任何异常（setText/select 抛错、编辑器被切换）都必须复位 playing，
+      // 否则 isPlaying() 永久为 true，后续所有回放都被拒绝
+      this.playing = false;
     }
-
-    this.playing = false;
   }
 }

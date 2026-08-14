@@ -56,7 +56,9 @@ export function buildMenu(
         { type: 'separator' },
         {
           label: en ? 'File Properties…' : '文件属性…',
-          accelerator: 'CmdOrCtrl+I',
+          // 不能用 CmdOrCtrl+I：原生菜单加速键优先于渲染层，会吞掉 Milkdown
+          // 编辑器的斜体快捷键（Ctrl+I），导致 WYSIWYG 模式下永远无法用快捷键加斜体
+          accelerator: 'CmdOrCtrl+Alt+I',
           // 渲染端通过 textora:menu 通道处理（派发 textora:show-file-info DOM 事件）
           click: () => sendToWindow('textora:menu', 'file:info'),
         },

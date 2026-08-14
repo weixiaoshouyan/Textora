@@ -12,12 +12,16 @@ export interface DialogHandlersDeps {
 /**
  * 原生对话框在父窗口被销毁（如关闭/退出）时可能永不 resolve，
  * 这里加超时兜底，避免渲染进程的 invoke 永远挂起。
+ * 注意：超时先返回后，原始 promise 的迟到 rejection 必须被吞掉——
+ * 否则成为 unhandledRejection，触发全局错误处理器刷日志/崩溃上报。
  */
 async function withDialogTimeout<T>(promise: Promise<T>, fallback: T, ms = 60_000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      promise,
+      // 把 rejection 转成 fallback：race 已结束（无论超时还是正常返回）时
+      // 迟到的结果都会被安全丢弃，不产生 unhandled rejection
+      promise.catch(() => fallback),
       new Promise<T>((resolve) => {
         timer = setTimeout(() => resolve(fallback), ms);
       }),
@@ -83,22 +87,31 @@ export function registerDialogHandlers(deps: DialogHandlersDeps): void {
     return checked.resolved;
   });
 
-  ipcMain.handle('textora:dialog_message', async (_evt, options: any): Promise<boolean> => {
+  ipcMain.handle('textora:dialog_message', async (_evt, options: any): Promise<number> => {
     const win = getMainWindow();
-    if (!win) return false;
+    if (!win) return 0;
     const type = options?.type || 'info';
     const isError = type === 'error';
+    // 多按钮支持：buttons 为字符串数组（1~4 个），返回值 = 选中按钮索引（0 起）
+    const defaultButtons = isError ? ['确定'] : ['确定', '取消'];
+    const buttons = Array.isArray(options?.buttons) && options.buttons.length > 0
+      ? options.buttons
+      : defaultButtons;
+    if (buttons.length > 4 || buttons.some((b: unknown) => typeof b !== 'string')) {
+      throw createIpcError('INVALID_ARGUMENT', 'Invalid dialog buttons');
+    }
     const result = await withDialogTimeout(
       dialog.showMessageBox(win, {
         type,
         title: options?.title || 'Textora',
         message: options?.message || '',
-        buttons: options?.buttons || (isError ? ['确定'] : ['确定', '取消']),
+        buttons,
         cancelId: isError ? -1 : 1,
       }),
-      { response: isError ? 0 : 1, checkboxChecked: false }
+      // 父窗口销毁/超时兜底：按「取消」处理（多按钮场景返回最后一个按钮的索引）
+      { response: buttons.length - 1, checkboxChecked: false }
     );
-    return result.response === 0;
+    return result.response;
   });
 
   // 在文件管理器中显示指定文件

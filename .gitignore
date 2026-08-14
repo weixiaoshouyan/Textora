@@ -40,6 +40,15 @@ test-results/
 playwright/.cache/
 coverage/
 .vitest/
+screenshot.tmp.png
+
+# Security scan history (local tooling)
+.mimosa/
+.reasonix/
+.inscode/
+
+# Debug leftovers
+_tmp_*.mjs
 
 # Env
 .env

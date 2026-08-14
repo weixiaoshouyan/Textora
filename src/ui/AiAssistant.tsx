@@ -9,7 +9,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useAppStore, type ChatSession } from "../store/useAppStore";
+import { useAppStore, getActiveTab, type ChatSession } from "../store/useAppStore";
 import { chat, type ChatMessage } from "../ai/aiService";
 import { confirmAiToolCall } from "../ai/confirmToolCall";
 import { useLocale, tFor } from "../i18n";
@@ -74,6 +74,13 @@ export function AiAssistant() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState("");
+  // 流式文本的同步镜像：onChunk 逐块 setState，catch/finally 里读 state 是过期值，
+  // abort 落库必须用 ref 取最新完整文本
+  const streamingRef = useRef("");
+  const appendStreaming = useCallback((chunk: string) => {
+    streamingRef.current += chunk;
+    setStreaming(streamingRef.current);
+  }, []);
   // 错误信息仅通过 setError 写入（展示逻辑在渲染分支中判断 streaming 前缀），state 值本身不直接读取
   const [, setError] = useState("");
   const [projectDir, setProjectDir] = useState("");
@@ -135,6 +142,7 @@ export function AiAssistant() {
     abortRef.current?.abort();
     abortRef.current = null;
     setLoading(false);
+    streamingRef.current = "";
     setStreaming("");
     setToolExecutionMsg("");
   }, [activeSessionId]);
@@ -157,16 +165,54 @@ export function AiAssistant() {
     }
   }, [workspaceRoot, projectDir]);
 
+  /**
+   * 提取当前文档上下文，优先「选区内容」→「光标附近 ±2000 字符」→ 文档开头。
+   * 整篇长文档直接截断前 4000 字符往往丢失 AI 真正需要关心的部分；
+   * 基于光标位置裁剪让模型看到正在编辑的上下文。
+   */
+  const getDocContext = useCallback((): string => {
+    const s = useAppStore.getState();
+    if (!getActiveTab(s)) return "";
+    // WYSIWYG（Milkdown）：从 ProseMirror 文档取选区/光标
+    const view = s.editorView;
+    if (view?.state) {
+      const { from, to } = view.state.selection;
+      const doc = view.state.doc;
+      const size = doc.content.size;
+      if (from !== to) {
+        const sel = doc.textBetween(from, to, "\n", "\n");
+        if (sel.trim()) return `[选中内容]\n${sel.slice(0, 4000)}`;
+      }
+      const before = doc.textBetween(Math.max(0, from - 2000), from, "\n", "\n");
+      const after = doc.textBetween(to, Math.min(size, to + 2000), "\n", "\n");
+      return `[光标前 2000 字符]\n${before}\n[光标后 2000 字符]\n${after}`;
+    }
+    // 源码/代码模式：textarea
+    const ta = document.querySelector(".textora-code-textarea") as HTMLTextAreaElement | null;
+    if (ta) {
+      const pos = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const text = ta.value;
+      if (pos !== end) {
+        const sel = text.slice(pos, end);
+        if (sel.trim()) return `[选中内容]\n${sel.slice(0, 4000)}`;
+      }
+      const before = text.slice(Math.max(0, pos - 2000), pos);
+      const after = text.slice(end, end + 2000);
+      return `[光标前 2000 字符]\n${before}\n[光标后 2000 字符]\n${after}`;
+    }
+    // 回退：文档开头
+    return content.slice(0, 4000);
+  }, [content]);
+
   const buildProjectContext = useCallback((): string => {
     if (!projectDir) return "";
     const ws = workspaceRoot || "";
-    const currentDoc = content ? content.slice(0, 4000) : "";
     const parts: string[][] = [];
     if (ws) parts.push(["Project root:", ws]);
     if (projectDir) parts.push(["Selected project directory:", projectDir]);
-    if (currentDoc) parts.push(["Current document (first 4000 chars):", currentDoc]);
     return parts.map(([k, v]) => k + "\n" + v).join("\n\n");
-  }, [projectDir, workspaceRoot, content]);
+  }, [projectDir, workspaceRoot]);
 
   const runChat = useCallback(
     async (userText: string, systemPrompt?: string) => {
@@ -195,13 +241,14 @@ export function AiAssistant() {
       setInput("");
       setError("");
       setLoading(true);
+      streamingRef.current = "";
       setStreaming("");
       setToolExecutionMsg("");
       const controller = new AbortController();
       abortRef.current = controller;
       try {
         const projectContext = buildProjectContext();
-        const docContext = content || "";
+        const docContext = getDocContext();
         const fullText = await chat({
           config: { apiKey: activeProvider.apiKey, endpoint: activeProvider.endpoint, model: activeProvider.model, enabled: true },
           history: newMessages.map((m) => ({ role: m.role, content: m.content })),
@@ -217,7 +264,7 @@ export function AiAssistant() {
           onChunk: (chunk) => {
             // 会话已切换时不再把旧请求的流式文本写入新会话 UI
             if (!stillActive()) return;
-            setStreaming((prev) => prev + chunk);
+            appendStreaming(chunk);
           },
           systemPrompt,
           signal: controller.signal,
@@ -240,24 +287,36 @@ export function AiAssistant() {
           }
         }
       } catch (e: any) {
-        if (!stillActive()) return;
-        // 用户主动点击"停止"导致的 abort：静默处理，不把 "The user aborted a request"
-        // 之类的错误显示在界面上
+        // 用户主动点击"停止"或切换会话导致的 abort：
+        // 把已流式输出的部分落库为 assistant 消息，否则这部分内容丢失
+        // （旧会话只留用户消息、助手回复为空，且无法恢复）
         if (controller.signal.aborted) {
-          setStreaming("");
-          setToolExecutionMsg("");
+          if (streamingRef.current.trim()) {
+            const partial: ChatMessage[] = [
+              ...newMessages,
+              { role: "assistant", content: streamingRef.current },
+            ];
+            updateAiSessionMessages(mySession, partial);
+          }
+          streamingRef.current = "";
+          if (stillActive()) {
+            setStreaming("");
+            setToolExecutionMsg("");
+          }
           return;
         }
+        if (!stillActive()) return;
         setError(e.message || "请求失败，请检查网络和配置");
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
+        streamingRef.current = "";
         if (stillActive()) {
           setLoading(false);
           setToolExecutionMsg("");
         }
       }
     },
-    [activeProvider, content, buildProjectContext, setSettingsPanelOpen, createAiSession, updateAiSessionMessages, insertMarkdownAtCursor, projectDir, workspaceRoot]
+    [activeProvider, buildProjectContext, getDocContext, setSettingsPanelOpen, createAiSession, updateAiSessionMessages, insertMarkdownAtCursor, projectDir, workspaceRoot, appendStreaming]
   );
 
   const handleSend = () => {

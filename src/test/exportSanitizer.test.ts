@@ -29,6 +29,22 @@ describe("export HTML sanitizer", () => {
     expect(sanitizeHtml('<style>@import url("https://evil.example/x.css");</style><p>x</p>')).not.toContain("@import");
   });
 
+  it("blocks CSS-escaped payloads that would bypass the style checks", () => {
+    // @\69 mport → @import、url(\6a avascript:) → url(javascript:)
+    expect(sanitizeHtml('<style>@\\69 mport url("https://evil.example/x.css");</style><p>x</p>')).not.toContain("@import");
+    expect(sanitizeHtml('<p style="background:url(\\6a avascript:alert(1))">x</p>')).not.toContain("javascript");
+    // 合法数值样式不受影响（KaTeX 依赖）
+    expect(sanitizeHtml('<span style="margin-right:0.1667em">x</span>')).toContain("style=\"margin-right:0.1667em\"");
+  });
+
+  it("blocks data:image/svg+xml URLs while keeping raster image data URLs", () => {
+    // svg+xml 可内嵌脚本且可被 <img>/<use>/<a> 引用：一律拦截
+    expect(sanitizeHtml('<a href="data:image/svg+xml,<svg onload=alert(1)>">x</a>')).toContain('href="#"');
+    expect(sanitizeHtml('<img src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=">')).toContain('src="#"');
+    // 位图 data URL 仍放行
+    expect(sanitizeHtml('<img src="data:image/png;base64,abc">')).toContain('src="data:image/png;base64,abc"');
+  });
+
   it("neutralizes dangerous URL protocols while preserving image data URLs", () => {
     const result = sanitizeHtml('<a href="javascript:alert(1)">x</a><img src="data:image/png;base64,abc"><img src="data:text/html,<script>x</script>">');
     expect(result).toContain('href="#"');

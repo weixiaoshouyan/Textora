@@ -33,7 +33,10 @@ export function SearchInFiles() {
   const [searched, setSearched] = useState(false);
   const [fileFilter] = useState("");
   const [excludeDirs] = useState("node_modules,.git");
+  // 键盘导航：当前选中项（↑/↓ 移动，Enter 打开）
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<number | null>(null);
   // 请求序号：丢弃过期响应，防止快速输入时旧结果覆盖新结果
   const searchSeqRef = useRef(0);
@@ -45,6 +48,7 @@ export function SearchInFiles() {
       setHits([]);
       setTruncated(false);
       setSearched(false);
+      setSelectedIndex(-1);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [open]);
@@ -122,8 +126,44 @@ export function SearchInFiles() {
   if (!open) return null;
 
   const openHit = (h: SearchHit) => {
-    void useAppStore.getState().openPathAtLine(h.path, h.line);
+    const s = useAppStore.getState();
+    void s.openPathAtLine(h.path, h.line);
+    // 打开 FindReplace 并预填搜索词：用户可在当前文件内按 Enter 连续跳转所有匹配
+    if (query.trim()) {
+      s.setFindReplaceInitialQuery(query);
+      s.setFindReplaceOpen(true);
+    }
     setOpen(false);
+  };
+
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (hits.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((i) => {
+        const next = i + 1 >= hits.length ? hits.length - 1 : i + 1;
+        // 滚动到可见区域
+        const el = listRef.current?.children[next] as HTMLElement | undefined;
+        el?.scrollIntoView({ block: "nearest" });
+        return next;
+      });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((i) => {
+        const next = Math.max(0, i - 1);
+        const el = listRef.current?.children[next] as HTMLElement | undefined;
+        el?.scrollIntoView({ block: "nearest" });
+        return next;
+      });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const idx = selectedIndex >= 0 ? selectedIndex : 0;
+      if (hits[idx]) openHit(hits[idx]);
+    }
   };
 
   return (
@@ -143,15 +183,13 @@ export function SearchInFiles() {
             placeholder={workspaceRoot ? t("search.workspacePlaceholder") : t("quickopen.noWorkspace")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setOpen(false);
-            }}
+            onKeyDown={onInputKeyDown}
             spellCheck={false}
           />
           <Toggle label=".*" title={t("search.regex")} active={useRegex} onClick={() => setUseRegex((v) => !v)} />
           <Toggle label="Aa" title={t("search.caseSensitive")} active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} />
         </div>
-        <div style={{ flex: 1, overflow: "auto", minHeight: 120 }}>
+        <div ref={listRef} style={{ flex: 1, overflow: "auto", minHeight: 120 }}>
           {!workspaceRoot && (
             <div className="px-3 py-3 text-xs" style={{ color: "var(--textora-fg-muted)" }}>
               {t("quickopen.noWorkspace")}
@@ -174,7 +212,13 @@ export function SearchInFiles() {
           )}
           {!loading &&
             hits.map((h, i) => (
-              <div key={i} className="textora-search-hit" onClick={() => openHit(h)}>
+              <div
+                key={i}
+                className="textora-search-hit"
+                style={i === selectedIndex ? { background: "var(--textora-bg-muted)" } : undefined}
+                onMouseEnter={() => setSelectedIndex(i)}
+                onClick={() => openHit(h)}
+              >
                 <div>
                   <span className="line-no">
                     {h.line}:{h.column}

@@ -17,6 +17,8 @@ import { BrowserWindow, ipcMain, app } from 'electron';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { createIpcError, validateWorkspacePath } from '../shared';
+import { checkRateLimit } from '../rateLimiter';
+import log from 'electron-log/main';
 
 async function requireExportTarget(targetPath: string): Promise<string> {
   const checked = await validateWorkspacePath(targetPath, { allowMissingLeaf: true });
@@ -39,11 +41,22 @@ let exportWin: BrowserWindow | null = null;
 
 // 导出串行化：导出窗口是单例，并发导出（PDF+PNG 同时、快速重复点击）会互相
 // 覆盖窗口里的 HTML 内容，导致输出串台、空白或打印错页。用 promise 链排队。
+// 队列深度上限：失控渲染层循环调用会让队列无限增长、每个任务加载 20MB HTML，
+// 拖垮主进程——超过上限直接拒绝新任务。
+const MAX_EXPORT_QUEUE_DEPTH = 5;
 let exportQueue: Promise<unknown> = Promise.resolve();
+let exportQueueDepth = 0;
 function enqueueExport<T>(task: () => Promise<T>): Promise<T> {
+  if (exportQueueDepth >= MAX_EXPORT_QUEUE_DEPTH) {
+    throw createIpcError('INVALID_ARGUMENT', 'Too many pending exports. Please wait for the current ones to finish.');
+  }
+  exportQueueDepth += 1;
   const run = exportQueue.then(task, task);
-  exportQueue = run.catch(() => undefined);
-  return run;
+  const tracked = run.finally(() => {
+    exportQueueDepth = Math.max(0, exportQueueDepth - 1);
+  });
+  exportQueue = tracked.catch(() => undefined);
+  return tracked;
 }
 
 function getExportWindow(): BrowserWindow {
@@ -152,11 +165,34 @@ async function measureBodyHeight(win: BrowserWindow): Promise<number> {
 // 导出 HTML 大小上限（20 MiB）：长文档 + 大量 base64 内联图片可能撑爆临时文件/隐藏窗口内存
 const MAX_EXPORT_HTML_LENGTH = 20 * 1024 * 1024;
 
+/** PDF 打印选项白名单：只透传渲染层可控的展示选项，不开放 margins 等布局参数 */
+function sanitizePdfOptions(options: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (typeof options !== "object" || options === null) return out;
+  const o = options as Record<string, unknown>;
+  if (typeof o.displayHeaderFooter === "boolean") {
+    out.displayHeaderFooter = o.displayHeaderFooter;
+  }
+  if (typeof o.headerTemplate === "string" && o.headerTemplate.length <= 2000) {
+    out.headerTemplate = o.headerTemplate;
+  }
+  if (typeof o.footerTemplate === "string" && o.footerTemplate.length <= 2000) {
+    out.footerTemplate = o.footerTemplate;
+  }
+  return out;
+}
+
 export function registerExportHandlers(): void {
-  ipcMain.handle('textora:export_pdf', async (_evt, html: string, targetPath: string): Promise<void> => {
+  ipcMain.handle('textora:export_pdf', async (_evt, html: string, targetPath: string, pdfOptions?: unknown): Promise<void> => {
     if (typeof html !== 'string') throw createIpcError('INVALID_ARGUMENT', 'Invalid export content');
     if (html.length > MAX_EXPORT_HTML_LENGTH) throw createIpcError('INVALID_ARGUMENT', 'Export content too large');
+    // 速率限制：每个任务加载 20MB HTML + 隐藏窗口 + printToPDF，高频调用开销极大
+    if (!checkRateLimit('textora:export_pdf')) {
+      log.warn('Rate limit exceeded for textora:export_pdf');
+      throw createIpcError('INVALID_ARGUMENT', 'Export rate limit exceeded. Please wait before exporting again.');
+    }
     const resolvedTarget = await requireExportTarget(targetPath);
+    const pdfOptionsSafe = sanitizePdfOptions(pdfOptions);
     await enqueueExport(async () => {
       const win = getExportWindow();
       await loadExportHtml(win, html);
@@ -164,6 +200,7 @@ export function registerExportHandlers(): void {
         printBackground: true,
         preferCSSPageSize: true,
         margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
+        ...pdfOptionsSafe,
       });
       await fsp.writeFile(resolvedTarget, pdfData);
     });
@@ -172,6 +209,10 @@ export function registerExportHandlers(): void {
   ipcMain.handle('textora:export_png', async (_evt, html: string, targetPath: string): Promise<void> => {
     if (typeof html !== 'string') throw createIpcError('INVALID_ARGUMENT', 'Invalid export content');
     if (html.length > MAX_EXPORT_HTML_LENGTH) throw createIpcError('INVALID_ARGUMENT', 'Export content too large');
+    if (!checkRateLimit('textora:export_png')) {
+      log.warn('Rate limit exceeded for textora:export_png');
+      throw createIpcError('INVALID_ARGUMENT', 'Export rate limit exceeded. Please wait before exporting again.');
+    }
     const resolvedTarget = await requireExportTarget(targetPath);
     await enqueueExport(async () => {
       const win = getExportWindow();

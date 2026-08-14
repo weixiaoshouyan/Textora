@@ -199,7 +199,52 @@ describe("useAppStore", () => {
   });
 });
 
+  describe("aiSlice 会话持久化（幽灵会话回归）", () => {
+    afterEach(() => {
+      localStorage.removeItem("textora.ai_sessions");
+      localStorage.removeItem("textora.ai_active_session");
+      useAppStore.setState({ aiSessions: [], aiActiveSessionId: null });
+    });
+
+    it("删除最后一个 AI 会话时移除 ai_active_session 键，而非写入字符串 null", () => {
+      useAppStore.getState().createAiSession("C:/ws");
+      const id = useAppStore.getState().aiActiveSessionId!;
+      expect(id).toBeTruthy();
+      useAppStore.getState().deleteAiSession(id);
+      // 旧实现 JSON.stringify(null) 会写入字符串 "null"，重启后被当作真实 id 读取
+      expect(localStorage.getItem("textora.ai_active_session")).toBeNull();
+      expect(useAppStore.getState().aiActiveSessionId).toBeNull();
+    });
+
+    it("删除非活动会话时保留活动会话", () => {
+      const a = useAppStore.getState().createAiSession("C:/ws");
+      const b = useAppStore.getState().createAiSession("C:/ws");
+      useAppStore.getState().setAiActiveSession(a);
+      useAppStore.getState().deleteAiSession(b);
+      expect(useAppStore.getState().aiActiveSessionId).toBe(a);
+      // 存储端 JSON.stringify 写入（带引号），读取端必须 parse 才能匹配真实 id
+      expect(JSON.parse(localStorage.getItem("textora.ai_active_session")!)).toBe(a);
+    });
+  });
+
   describe("session restore（reload 未保存修改恢复）", () => {
+    // 该 describe 位于 useAppStore describe 之外，需自行重置 store，
+    // 否则前一个用例恢复的标签（含 dirtyTabs 内容）会残留，
+    // 导致 restoreSession 的 existing 去重跳过磁盘读取，断言失败
+    beforeEach(() => {
+      useAppStore.setState({
+        tabs: [],
+        activeTabId: null,
+        currentPath: null,
+        currentName: "未命名",
+        content: "",
+        dirty: false,
+        editing: false,
+        pendingConfirm: null,
+        closeFlow: "idle",
+      });
+    });
+
     afterEach(() => {
       localStorage.removeItem("textora.session");
       localStorage.removeItem("textora.workspace");

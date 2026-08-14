@@ -17,13 +17,37 @@ const URL_ATTRS = new Set(["href", "src", "action", "formaction", "srcset", "xli
 const STYLE_BLOCK_RE =
   /(?:expression\s*\(|behavior\s*:|-moz-binding|@import|javascript\s*:|vbscript\s*:)/i;
 const STYLE_URL_BLOCK_RE =
-  /url\s*\(\s*['"]?\s*(?:javascript|vbscript|data:text\/html)/i;
+  /url\s*\(\s*['"]?\s*(?:javascript|vbscript|data:(?:text\/html|image\/svg[+-]?xml))/i;
+
+/** 解码 CSS 转义序列（`\69` → `i`、`\6a` → `j`），防止 `@\69 mport`、`url(\6a avascript:)`
+ *  之类转义写法绕过下方正则黑名单。仅解码转义本身，不改动其余内容。 */
+function decodeCssEscapes(value: string): string {
+  return value
+    .replace(/\\([0-9a-f]{1,6})\s?/gi, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\(.)/g, "$1");
+}
 
 /** 校验 style 内容是否安全；不安全则整段丢弃（KaTeX 的数值 style 不受影响）。 */
 function isSafeStyle(value: string): boolean {
-  const cleaned = value.replace(/[\t\n\r\0\x0b]/g, "");
+  const cleaned = decodeCssEscapes(value.replace(/[\t\n\r\0\x0b]/g, ""));
   if (STYLE_BLOCK_RE.test(cleaned)) return false;
   if (STYLE_URL_BLOCK_RE.test(cleaned)) return false;
+  return true;
+}
+
+/** data: URL 白名单：仅放行常见位图（mermaid/KaTeX 渲染结果不是 data URL，无此需求） */
+const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpe?g|gif|webp|bmp|avif|ico);/i;
+
+/** 校验 URL 属性值是否安全：拒绝脚本协议与危险 data: URL */
+function isSafeUrlValue(raw: string): boolean {
+  // 移除控制字符（浏览器导航时会剥离 tab/newline 等，但正则不会）
+  const cleaned = raw.replace(/[\t\n\r\0\x0b]/g, "").trim().toLowerCase();
+  if (/^(?:javascript:|vbscript:)/i.test(cleaned)) return false;
+  if (cleaned.startsWith("data:")) {
+    // data:image/svg+xml 中可嵌入 <script>（SVG-as-document 场景），
+    // 且可用于 <img>/<use> 外链探测，一律拦截；仅放行常见位图
+    return SAFE_DATA_IMAGE_RE.test(cleaned);
+  }
   return true;
 }
 
@@ -75,17 +99,13 @@ export function sanitizeHtml(html: string): string {
         const parts = value.split(",");
         const allSafe = parts.every((p) => {
           const url = p.trim().split(/\s+/)[0];
-          // 移除控制字符（浏览器导航时会剥离 tab/newline 等，但正则不会）
-          const cleaned = url.replace(/[\t\n\r\0\x0b]/g, "").toLowerCase();
-          return !/^(?:javascript:|vbscript:|data:text\/html)/i.test(cleaned);
+          return isSafeUrlValue(url);
         });
         if (!allSafe) element.removeAttribute(attribute.name);
         continue;
       }
       if (isUrlAttr(name)) {
-        // 移除控制字符（浏览器导航时会剥离 tab/newline 等，但正则不会）
-        const cleaned = value.replace(/[\t\n\r\0\x0b]/g, "").trim().toLowerCase();
-        if (/^(?:javascript:|vbscript:|data:text\/html)/i.test(cleaned)) {
+        if (!isSafeUrlValue(value)) {
           element.setAttribute(attribute.name, "#");
         }
       }

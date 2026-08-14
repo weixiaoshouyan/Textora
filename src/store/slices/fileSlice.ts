@@ -214,8 +214,25 @@ export function fileSlice(
     saveTab: async (id: string) => {
       // 重入复用：自动保存在途时用户 Ctrl+S / 关窗保存应等待本次写盘完成，
       // 而不是静默丢弃（否则 onSave 链会以为已保存，实际写入的是旧快照）。
+      // 但等待结束后必须复查：若写盘期间内容又更新（revision 变化），
+      // 旧快照写入成功并不代表最新内容已落盘——直接复用该 Promise 会让
+      // 关闭标签/关窗路径误判为已保存，把未落盘的最新修改删掉（数据丢失）。
       const inFlight = savingTabs.get(id);
-      if (inFlight) return inFlight;
+      if (inFlight) {
+        try {
+          await inFlight;
+        } catch {
+          // 在途写盘失败：错误已由该次调用弹出提示，本次继续尝试重新保存
+        }
+        const tabAfter = get().tabs.find((t) => t.id === id);
+        if (!tabAfter) return;
+        if (tabAfter.dirty) {
+          // 内容在写盘期间更新过（或写盘失败仍 dirty）：用最新快照重新走完整保存
+          // （此时 savingTabs 已无在途记录，不会再进入本分支）
+          return get().saveTab(id);
+        }
+        return;
+      }
       const run = (async () => {
         const tab = get().tabs.find((t) => t.id === id);
         if (!tab) return;
@@ -516,7 +533,13 @@ export function fileSlice(
               get().clearPendingConfirm();
               void get().saveTab(tab.id)
                 .then(() => confirmOne(idx + 1))
-                .catch(() => undefined);
+                .catch(() => {
+                  // 保存失败：复位关闭流程（不推进确认链）。
+                  // unsubCancel 订阅会因 closeFlow closing→idle 发出 close-cancel，
+                  // 主进程据此重置关闭流程、清掉 60s 兜底定时器，窗口保持打开
+                  // 让用户处理错误——否则卡在 "closing" 会被主进程 60s 强杀丢数据。
+                  get().setCloseFlow("idle");
+                });
             },
             onDiscard: () => {
               get().clearPendingConfirm();

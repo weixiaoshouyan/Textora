@@ -18,8 +18,8 @@ declare global {
       dialog: {
         open: (opts: any) => Promise<any>;
         save: (opts: any) => Promise<any>;
-        // dialog_message handler 返回 boolean（true=确认，false=取消）
-        message: (opts: any) => Promise<boolean>;
+        // dialog_message handler 返回选中按钮索引（0 起）
+        message: (opts: any) => Promise<number>;
       };
       window: {
         minimize: () => void;
@@ -167,13 +167,30 @@ export async function message(
       : options?.title || "Textora";
   const kind =
     typeof options === "object" && options?.kind ? options.kind : "info";
-  // dialog_message handler 返回 boolean（true=确认，false=取消）
-  const confirmed: boolean = await window.textora.dialog.message({
+  // dialog_message handler 返回选中按钮索引：默认按钮 [确定, 取消]，
+  // 索引 0 = 确定（true），其余（含取消/超时兜底）为 false
+  const idx: number = await window.textora.dialog.message({
     message: text,
     title,
     type: kind,
   });
-  return confirmed;
+  return idx === 0;
+}
+
+/** 多按钮消息对话框：返回选中按钮的索引（0 起）。超时/取消兜底返回最后一个按钮。 */
+export async function messageChoice(
+  text: string,
+  options?: { title?: string; kind?: "info" | "warning" | "error"; buttons: string[] }
+): Promise<number> {
+  const title = options?.title || "Textora";
+  const kind = options?.kind || "info";
+  const buttons = options?.buttons && options.buttons.length > 0 ? options.buttons : ["确定", "取消"];
+  return await window.textora.dialog.message({
+    message: text,
+    title,
+    type: kind,
+    buttons,
+  });
 }
 
 /** 新建窗口 */

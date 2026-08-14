@@ -16,10 +16,13 @@ const DEFAULT_CONFIG: RateLimitConfig = {
   windowMs: 10_000, // 10秒内最多100次调用
 };
 
-/** 严格限制的通道（更低的限制） */
+/** 严格限制的通道（更低的限制）——重 IO / 可被高频滥用的通道 */
 const STRICT_CHANNELS = new Set([
   'textora:run_tool',
   'textora:fetch_url',
+  'textora:search_in_files',
+  'textora:export_pdf',
+  'textora:export_png',
 ]);
 
 const STRICT_CONFIG: RateLimitConfig = {
@@ -57,36 +60,36 @@ export class RateLimiter {
   }
 }
 
-/** 按 IPC channel 分别限制的映射 */
-const limiters = new Map<string, RateLimiter>();
+/** 按 IPC channel 分别限制的映射（limiter + 其配置，供 getLimitedChannels 判断） */
+const limiters = new Map<string, { limiter: RateLimiter; config: RateLimitConfig }>();
 
 /** 获取或创建限制器 */
-function getLimiter(channel: string): RateLimiter {
+function getLimiter(channel: string): { limiter: RateLimiter; config: RateLimitConfig } {
   if (!limiters.has(channel)) {
     const config = STRICT_CHANNELS.has(channel) ? STRICT_CONFIG : DEFAULT_CONFIG;
-    limiters.set(channel, new RateLimiter(config));
+    limiters.set(channel, { limiter: new RateLimiter(config), config });
   }
   return limiters.get(channel)!;
 }
 
 /** 检查指定通道的速率限制 */
 export function checkRateLimit(channel: string): boolean {
-  return getLimiter(channel).check();
+  return getLimiter(channel).limiter.check();
 }
 
 /** 获取指定通道的当前调用计数 */
 export function getChannelCallCount(channel: string): number {
-  return getLimiter(channel).getCallCount();
+  return getLimiter(channel).limiter.getCallCount();
 }
 
 /** 重置指定通道的限制计数 */
 export function resetChannelLimit(channel: string): void {
-  getLimiter(channel).reset();
+  getLimiter(channel).limiter.reset();
 }
 
 /** 重置所有通道的限制计数 */
 export function resetAllLimits(): void {
-  for (const limiter of limiters.values()) {
+  for (const { limiter } of limiters.values()) {
     limiter.reset();
   }
 }
@@ -94,8 +97,9 @@ export function resetAllLimits(): void {
 /** 获取被限制的通道列表（用于日志） */
 export function getLimitedChannels(): string[] {
   const result: string[] = [];
-  for (const [channel, limiter] of limiters.entries()) {
-    if (limiter.getCallCount() >= DEFAULT_CONFIG.maxCalls) {
+  for (const [channel, { limiter, config }] of limiters.entries()) {
+    // 用该通道自己的配置判断（strict 通道上限是 20，不是 DEFAULT_CONFIG 的 100）
+    if (limiter.getCallCount() >= config.maxCalls) {
       result.push(channel);
     }
   }

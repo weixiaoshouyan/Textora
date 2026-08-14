@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, useCallback, forwardRef } from "react";
 import { invoke, openDialog, readTextFile } from "../ipc";
-import { useAppStore } from "../store/useAppStore";
+import { useAppStore, getActiveTab } from "../store/useAppStore";
 import { useLocale, tFor } from "../i18n";
 import { diffTexts, diffStats, type DiffLine } from "../editor/diff";
 
 /**
  * 文件比较视图（双栏 diff）。
- * 通过文件菜单"比较文件..."触发。
+ * 通过文件菜单"比较文件..."触发；也可由外部变更提示直接带入对比
+ * （pendingExternalDiff：磁盘版本 vs 当前编辑版本）。
  *
  * 功能：
  *  - 选择左右两个文件进行行级 diff
@@ -34,14 +35,25 @@ export function DiffView() {
   // 防止同步滚动时互相触发
   const syncing = useRef(false);
 
-  // 打开时重置状态
+  // 打开时重置状态；若有外部变更对比请求（磁盘 vs 当前编辑），直接带入
   useEffect(() => {
     if (open) {
-      setPathA(null);
-      setPathB(null);
-      setTextA("");
-      setTextB("");
-      setError(null);
+      const pending = useAppStore.getState().pendingExternalDiff;
+      if (pending) {
+        useAppStore.getState().setPendingExternalDiff(null);
+        const active = getActiveTab(useAppStore.getState());
+        setPathA(pending.path);
+        setTextA(pending.diskText);
+        setPathB(active?.path ?? pending.path);
+        setTextB(active?.content ?? "");
+        setError(null);
+      } else {
+        setPathA(null);
+        setPathB(null);
+        setTextA("");
+        setTextB("");
+        setError(null);
+      }
     }
   }, [open]);
 

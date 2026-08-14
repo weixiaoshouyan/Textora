@@ -191,6 +191,7 @@ export function SettingsPanel() {
             {activeCategory === "view" && (
               <ViewSection
                 settings={settings}
+                updateSettings={updateSettings}
                 toggleFocus={toggleFocus}
                 toggleTypewriter={toggleTypewriter}
                 toggleSource={toggleSource}
@@ -421,6 +422,7 @@ function EditorSection({
 
 function ViewSection({
   settings,
+  updateSettings,
   toggleFocus,
   toggleTypewriter,
   toggleSource,
@@ -430,6 +432,7 @@ function ViewSection({
   t,
 }: {
   settings: any;
+  updateSettings: (patch: Partial<any>) => void;
   toggleFocus: () => void;
   toggleTypewriter: () => void;
   toggleSource: () => void;
@@ -446,6 +449,19 @@ function ViewSection({
       <ViewRow label={t("typewriter")} checked={settings.typewriterMode} onChange={toggleTypewriter} />
       <ViewRow label={t("source")} checked={settings.sourceMode} onChange={toggleSource} />
       <ViewRow label={t("settings.readingMode")} checked={settings.readingMode} onChange={toggleReading} />
+      <div className="pt-2 text-xs font-semibold" style={{ color: "var(--textora-fg-muted)" }}>
+        {t("settings.pdfExport")}
+      </div>
+      <ViewRow
+        label={t("settings.pdfHeader")}
+        checked={!!settings.pdfHeader}
+        onChange={() => updateSettings({ pdfHeader: !settings.pdfHeader })}
+      />
+      <ViewRow
+        label={t("settings.pdfFooter")}
+        checked={!!settings.pdfFooter}
+        onChange={() => updateSettings({ pdfFooter: !settings.pdfFooter })}
+      />
     </div>
   );
 }

@@ -27,6 +27,9 @@ export function FindReplace() {
   const debounceRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputGroupRef = useRef<HTMLDivElement | null>(null);
+  // 打开时若带外部预填词（跨文件搜索跳转）：首次查找从光标之后定位，
+  // 而不是永远选中文档的第一个匹配（会覆盖跳转位置）
+  const locateFromCursorRef = useRef(false);
   const locale = useLocale((s) => s.locale);
   const t = tFor(locale);
   useFocusTrap(containerRef, open);
@@ -62,7 +65,13 @@ export function FindReplace() {
   useEffect(() => {
     if (open) {
       inputRef.current?.focus();
-      setQuery("");
+      // 消费外部预填的查找词（跨文件搜索跳转），一次性
+      const initial = useAppStore.getState().findReplaceInitialQuery;
+      if (initial) {
+        useAppStore.getState().setFindReplaceInitialQuery(null);
+        locateFromCursorRef.current = true;
+      }
+      setQuery(initial ?? "");
       setReplacement("");
       setMatches([]);
       setIndex(0);
@@ -81,8 +90,18 @@ export function FindReplace() {
         }
         const m = findAllInDoc(view, query, { regex: useRegex, caseSensitive });
         setMatches(m);
-        setIndex(0);
-        if (m[0]) selectMatch(view, m[0].from, m[0].to);
+        if (locateFromCursorRef.current && view.state) {
+          // 外部跳转进入：从光标（含）之后的第一个匹配开始，保留跳转上下文
+          locateFromCursorRef.current = false;
+          const selFrom = view.state.selection.from;
+          const idx = m.findIndex((r) => r.from >= selFrom);
+          const start = idx >= 0 ? idx : 0;
+          setIndex(start);
+          if (m[start]) selectMatch(view, m[start].from, m[start].to);
+        } else {
+          setIndex(0);
+          if (m[0]) selectMatch(view, m[0].from, m[0].to);
+        }
       } else {
         const api = getCodeApi();
         if (!api) {
@@ -91,6 +110,8 @@ export function FindReplace() {
         }
         const m = api.getAllMatches(query, { regex: useRegex, caseSensitive });
         setMatches(m);
+        // CodeEditor 无光标 API：外部跳转也从头定位
+        locateFromCursorRef.current = false;
         setIndex(0);
         if (m[0]) api.select(m[0].from, m[0].to);
       }

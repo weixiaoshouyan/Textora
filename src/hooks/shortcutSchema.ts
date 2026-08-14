@@ -109,7 +109,9 @@ export const SHORTCUTS: ShortcutDef[] = [
     defaultBinding: "mod+b",
     descriptionKey: "sc.toggleSidebar",
     category: "view",
-    allowInInput: true,
+    // 不允许输入框内触发：Mod+B 是编辑器加粗快捷键（Milkdown/ProseMirror 原生处理），
+    // 若 allowInInput 则 Ctrl+B 同时"加粗 + 收起侧边栏"，两者都会发生
+    allowInInput: false,
     repeatGuard: false,
   },
   {
@@ -270,6 +272,32 @@ export function saveCustomBindings(bindings: Record<string, string>) {
   }
 }
 
+/**
+ * 规范化绑定字符串：修饰键统一为固定顺序（mod < shift < alt），主键最后。
+ * 用户自定义绑定时可能存成 "shift+mod+s"、"alt+shift+mod+x" 等任意修饰键顺序，
+ * 与 eventToBinding 生成的顺序不一致会导致绑定静默失效。
+ */
+export function normalizeBinding(binding: string): string {
+  const parts = binding.split("+");
+  const mods: string[] = [];
+  let key = "";
+  for (const p of parts) {
+    const lower = p.toLowerCase();
+    if (lower === "mod" || lower === "ctrl" || lower === "meta" || lower === "control") {
+      if (!mods.includes("mod")) mods.push("mod");
+    } else if (lower === "shift") {
+      if (!mods.includes("shift")) mods.push("shift");
+    } else if (lower === "alt") {
+      if (!mods.includes("alt")) mods.push("alt");
+    } else {
+      key = lower;
+    }
+  }
+  const order = ["mod", "shift", "alt"];
+  const sortedMods = order.filter((m) => mods.includes(m));
+  return key ? [...sortedMods, key].join("+") : sortedMods.join("+");
+}
+
 /** 获取某个快捷键的当前绑定（自定义优先） */
 export function getBinding(def: ShortcutDef, custom: Record<string, string>): string {
   return custom[def.id] ?? def.defaultBinding;
@@ -279,7 +307,7 @@ export function getBinding(def: ShortcutDef, custom: Record<string, string>): st
 export function buildBindingMap(custom: Record<string, string>): Map<string, string> {
   const map = new Map<string, string>();
   for (const def of SHORTCUTS) {
-    const binding = getBinding(def, custom);
+    const binding = normalizeBinding(getBinding(def, custom));
     map.set(binding, def.id);
   }
   return map;
@@ -297,7 +325,7 @@ export function eventToBinding(e: KeyboardEvent): string | null {
   if (e.shiftKey) parts.push("shift");
   if (e.altKey) parts.push("alt");
   parts.push(key);
-  return parts.join("+");
+  return normalizeBinding(parts.join("+"));
 }
 
 /** 将 binding 字符串格式化为人类可读标签 */
@@ -335,9 +363,10 @@ export function findConflict(
   exceptId: string,
   custom: Record<string, string>
 ): string | null {
+  const target = normalizeBinding(binding);
   for (const def of SHORTCUTS) {
     if (def.id === exceptId) continue;
-    if (getBinding(def, custom) === binding) return def.id;
+    if (normalizeBinding(getBinding(def, custom)) === target) return def.id;
   }
   return null;
 }

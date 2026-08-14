@@ -14,6 +14,7 @@
  * 与 attachImageLightbox 兼容：单击选中/缩放，双击打开 lightbox。
  */
 import type { EditorView } from "@milkdown/prose/view";
+import { parseSizeFromTitle, buildSizeTitle, isSizeTitle } from "./imageSize";
 
 let handleEl: HTMLDivElement | null = null;
 let activeImg: HTMLImageElement | null = null;
@@ -26,6 +27,14 @@ let startY = 0;
 let startWidth = 0;
 let startHeight = 0;
 let aspect = 1;
+
+/** 根据 img 的 title（`=WxH`）应用显示尺寸；非尺寸 title 不做处理 */
+function applySizeFromTitle(img: HTMLImageElement) {
+  const size = parseSizeFromTitle(img.title || "");
+  if (!size) return;
+  img.style.width = `${size.width}px`;
+  img.style.height = `${size.height}px`;
+}
 
 function updateHandlePosition() {
   if (!handleEl || !activeImg) return;
@@ -151,18 +160,19 @@ function commitToProseMirror() {
   if (pos == null) return;
   const node = view.state.doc.nodeAt(pos);
   if (!node || node.type.name !== "image") return;
-  // 检查 schema 是否支持 width attr（Milkdown 默认不支持）
-  const imageType = view.state.schema.nodes.image;
-  if (imageType && "width" in (imageType as any).attrs) {
-    const newAttrs: Record<string, unknown> = { ...node.attrs, width };
-    if (height) newAttrs.height = height;
-    try {
-      view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, newAttrs));
-    } catch {
-      /* 写入失败：忽略，DOM style 仍然保留 */
-    }
+  // Typora 兼容的尺寸持久化：写回 title `=WxH`（markdown 往返无损）。
+  // 用户已有非尺寸 title（如说明文字）时不覆盖，尺寸仅在当前会话生效。
+  const existingTitle = node.attrs.title || "";
+  if (existingTitle && !isSizeTitle(existingTitle)) return;
+  const w = parseInt(width, 10);
+  const h = parseInt(height, 10);
+  const sizeTitle = buildSizeTitle(w, h);
+  if (!sizeTitle) return;
+  try {
+    view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { title: sizeTitle }));
+  } catch {
+    // 写入失败：忽略，DOM style 仍然保留
   }
-  // schema 不支持 width：保持 DOM style，不 dispatch（避免 re-render 丢失）
 }
 
 export function attachImageResize(view: EditorView): () => void {
@@ -170,7 +180,48 @@ export function attachImageResize(view: EditorView): () => void {
   viewRef = view;
   const dom = view.dom as HTMLElement;
 
+  // ===== 尺寸持久化应用 =====
+  // img 的 load 事件不冒泡，但 capture 阶段可以截获；MutationObserver 兜底
+  // 处理 data: URL 图片（load 同步触发早于监听器挂载）与内容替换后的新 img。
+  const onLoadCapture = (e: Event) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === "IMG") applySizeFromTitle(target as HTMLImageElement);
+  };
+  const sizeObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type === "childList") {
+        for (const node of m.addedNodes) {
+          if (node instanceof HTMLImageElement) {
+            applySizeFromTitle(node);
+          } else if (node instanceof HTMLElement) {
+            node.querySelectorAll("img").forEach(applySizeFromTitle);
+          }
+        }
+      } else if (
+        m.type === "attributes" &&
+        m.target instanceof HTMLImageElement &&
+        (m.attributeName === "title" || m.attributeName === "src")
+      ) {
+        applySizeFromTitle(m.target);
+      }
+    }
+  });
+  dom.addEventListener("load", onLoadCapture, true);
+  sizeObserver.observe(dom, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["title", "src"],
+  });
+  // 初次挂载：已存在的 img 立即应用
+  dom.querySelectorAll("img").forEach(applySizeFromTitle);
+
   const onClick = (e: MouseEvent) => {
+    // 点击缩放句柄本身（mousedown/mouseup 都发生在句柄上时，浏览器派发的
+    // click 会落在句柄 div 上）：不执行任何逻辑，否则拖拽结束后紧接的
+    // click 会把刚显示/正在用的句柄删掉（justResized 的 setTimeout(0)
+    // 与 click 派发存在竞态，不能依赖它）
+    if (e.target === handleEl) return;
     // 忽略拖拽结束紧接的 click（mouseup → click 序列）
     if (justResized) {
       justResized = false;
@@ -217,6 +268,8 @@ export function attachImageResize(view: EditorView): () => void {
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("mousemove", onMouseMove);
     window.removeEventListener("mouseup", onMouseUp);
+    dom.removeEventListener("load", onLoadCapture, true);
+    sizeObserver.disconnect();
     if (justResizedTimer) clearTimeout(justResizedTimer);
     removeHandle();
     viewRef = null;

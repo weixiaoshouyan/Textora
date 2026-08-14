@@ -106,6 +106,34 @@ describe("version-aware autosave", () => {
     expect(useAppStore.getState().tabs[0].dirty).toBe(false);
   });
 
+  it("re-saves latest content after reentry when edits happened during in-flight write", async () => {
+    // 回归：自动保存在途（v1 快照）时用户继续输入（v2），随后关闭标签/关窗保存
+    // 复用旧快照会只写 v1 就放行关闭，v2 未落盘即丢失。修复后必须补写最新内容。
+    const writes: string[] = [];
+    const releaseFirst = deferred<void>();
+    const invoke = vi.spyOn(window.textora, "invoke").mockImplementation((cmd: string, ...args: any[]) => {
+      if (cmd === "write_file") {
+        writes.push(args[1] as string);
+        if (writes.length === 1) return releaseFirst.promise.then(() => null);
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(null);
+    });
+    invoke.mockClear();
+    seedDirtyTab("a", "C:/workspace/a.md", "v1");
+
+    const first = useAppStore.getState().saveTab("a");
+    // 在途写盘挂起期间用户继续编辑（revision 增加、内容变 v2）
+    useAppStore.getState().setContent("v2");
+    const second = useAppStore.getState().saveTab("a");
+    releaseFirst.resolve();
+    await first;
+    await second;
+
+    expect(writes).toEqual(["v1", "v2"]);
+    expect(useAppStore.getState().tabs[0].dirty).toBe(false);
+  });
+
   it("rejects persisted session paths outside the workspace", () => {
     expect(isValidSessionPath("C:/other/secret.md", "C:/workspace")).toBe(false);
     expect(isValidSessionPath("C:/workspace/docs/note.md", "C:/workspace")).toBe(true);

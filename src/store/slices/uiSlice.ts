@@ -15,6 +15,9 @@ export function uiSlice(set: SetFn, get: GetFn): Partial<AppState> {
   return {
     findReplaceOpen: false,
     setFindReplaceOpen: (open) => set({ findReplaceOpen: open }),
+    // 外部（如跨文件搜索面板）预填的查找词：FindReplace 打开时消费并清空
+    findReplaceInitialQuery: null,
+    setFindReplaceInitialQuery: (q) => set({ findReplaceInitialQuery: q }),
     quickOpenOpen: false,
     setQuickOpenOpen: (open) => set({ quickOpenOpen: open }),
     searchInFilesOpen: false,
@@ -23,6 +26,8 @@ export function uiSlice(set: SetFn, get: GetFn): Partial<AppState> {
     setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
     diffViewOpen: false,
     setDiffViewOpen: (open) => set({ diffViewOpen: open }),
+    pendingExternalDiff: null,
+    setPendingExternalDiff: (v) => set({ pendingExternalDiff: v }),
     graphViewOpen: false,
     setGraphViewOpen: (open) => set({ graphViewOpen: open }),
     pendingConfirm: null,

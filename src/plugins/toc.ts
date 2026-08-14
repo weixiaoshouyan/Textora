@@ -100,8 +100,12 @@ export const tocPlugin = $prose(() => {
         const meta = tr.getMeta(tocKey);
         const bump = meta && typeof meta.bump === "number" ? meta.bump : prev.bump;
         if (!tr.docChanged && bump === prev.bump) return prev;
-        // 大文档降级：输入（docChanged 且非 bump）时跳过全量重建
-        if (tr.docChanged && bump === prev.bump && isLargeDoc(tr.doc)) return prev;
+        // 大文档降级：输入（docChanged 且非 bump）时跳过全量重建。
+        // 但 prev.set 对应旧 doc，插件返回的 DecorationSet 不会被视图自动重映射，
+        // 必须显式 map(tr.mapping, tr.doc) 跟随，否则编辑后装饰位置漂移
+        if (tr.docChanged && bump === prev.bump && isLargeDoc(tr.doc)) {
+          return { set: prev.set.map(tr.mapping, tr.doc), bump };
+        }
 
         const blocks = findTocBlocks(tr.doc);
         if (blocks.length === 0) {

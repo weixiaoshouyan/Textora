@@ -87,12 +87,19 @@ const loadingLangs = new Map<string, Promise<boolean>>();
 function getHl(): Promise<Highlighter> {
   if (!highlighter) {
     // 动态 import：shiki 与主 bundle 分离，仅在首次高亮时加载
-    highlighter = import("shiki").then(({ getHighlighter }) =>
-      getHighlighter({
-        themes: ["github-light", "github-dark"],
-        langs: ["text"],
-      }),
-    );
+    highlighter = import("shiki")
+      .then(({ getHighlighter }) =>
+        getHighlighter({
+          themes: ["github-light", "github-dark"],
+          langs: ["text"],
+        }),
+      )
+      .catch((err) => {
+        // 加载失败（瞬时磁盘/网络错误）：复位单例，允许下次调用重试。
+        // 否则 rejected promise 被永久缓存，整场会话高亮都回退为纯文本
+        highlighter = null;
+        throw err;
+      });
   }
   return highlighter;
 }

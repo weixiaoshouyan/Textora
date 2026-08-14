@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCloseRequestHandler } from "../hooks/useWindowClose";
+import { createCloseRequestHandler, shouldNotifyCloseCancel } from "../hooks/useWindowClose";
 
 describe("window close flow", () => {
   it("handles duplicate close requests only once", () => {
@@ -34,5 +34,38 @@ describe("window close flow", () => {
 
     expect(closeAllTabs).not.toHaveBeenCalled();
     expect(ready).toHaveBeenCalledTimes(1);
+  });
+
+  describe("shouldNotifyCloseCancel（关窗确认链回归）", () => {
+    const tabs = [{ id: "a", dirty: true }];
+
+    it("closeAllTabs 开头的防御性 setCloseFlow(idle→idle) 不应误报取消", () => {
+      // 首次关闭时 closeFlow 初始为 idle，closeAllTabs 第一行 setCloseFlow("idle")
+      // 是幂等重置：若被当作取消，close-cancel 提前发出 → 窗口第一次关不掉
+      expect(
+        shouldNotifyCloseCancel(
+          { closeFlow: "idle", pendingConfirm: null, tabs },
+          { closeFlow: "idle", pendingConfirm: null, tabs },
+        ),
+      ).toBe(false);
+    });
+
+    it("onSave/onDiscard 清 pendingConfirm（closeFlow 保持 closing）不应误报取消", () => {
+      expect(
+        shouldNotifyCloseCancel(
+          { closeFlow: "closing", pendingConfirm: { title: "x" }, tabs },
+          { closeFlow: "closing", pendingConfirm: null, tabs },
+        ),
+      ).toBe(false);
+    });
+
+    it("用户主动取消（closing → idle）才通知主进程", () => {
+      expect(
+        shouldNotifyCloseCancel(
+          { closeFlow: "closing", pendingConfirm: { title: "x" }, tabs },
+          { closeFlow: "idle", pendingConfirm: null, tabs },
+        ),
+      ).toBe(true);
+    });
   });
 });

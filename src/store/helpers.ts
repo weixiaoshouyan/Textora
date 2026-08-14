@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS: Settings = {
   outlineVisible: true,
   sidebarWidth: 240,
   vimMode: false,
+  pdfHeader: false,
+  pdfFooter: false,
 };
 
 // ===== localStorage 安全读写 =====

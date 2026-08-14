@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef, useMemo } from "react";
 import { useAppStore } from "../store/useAppStore";
-import { exportAsHTML, exportAsPDF, exportAsDOCX, exportAsPNG } from "../editor/exporter";
-import { openDialog } from "../ipc";
+import { exportAsHTML, exportAsPDF, exportAsDOCX, exportAsPNG, copyHtmlToClipboard } from "../editor/exporter";
+import { openDialog, message } from "../ipc";
 import { useLocale, tFor } from "../i18n";
 import { SHORTCUTS, getBinding, formatBinding, loadCustomBindings } from "../hooks/shortcutSchema";
 
@@ -94,6 +94,19 @@ export function TopBar() {
           <DropdownItem label={t("export.html")} onClick={() => { setFileMenuOpen(false); void exportAsHTML(); }} />
           <DropdownItem label={t("export.docx")} onClick={() => { setFileMenuOpen(false); void exportAsDOCX(); }} />
           <DropdownItem label={t("export.png")} onClick={() => { setFileMenuOpen(false); void exportAsPNG(); }} />
+          <DropdownItem
+            label={t("export.copyHtml")}
+            onClick={() => {
+              setFileMenuOpen(false);
+              void (async () => {
+                const ok = await copyHtmlToClipboard();
+                await message(ok ? t("export.copyHtmlDone") : t("export.copyHtmlFailed"), {
+                  title: t("export.copyHtml"),
+                  kind: ok ? "info" : "error",
+                });
+              })();
+            }}
+          />
           <DropdownDivider />
           <DropdownItem label={t("diff.compareFiles")} onClick={() => { setFileMenuOpen(false); useAppStore.getState().setDiffViewOpen(true); }} />
           <DropdownDivider />

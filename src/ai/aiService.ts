@@ -90,17 +90,23 @@ async function callOpenAI(
     body.stream = true;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
-    // once: true —— AbortSignal 只会 abort 一次，触发后自动移除监听器，避免内存泄漏
+    // once: true —— AbortSignal 只会 abort 一次，触发后自动移除监听器，避免内存泄漏。
+    // 请求正常结束时也要在 finally 里移除，否则长生命周期的 signal（会话级）
+    // 上会累积未触发的 abort 监听器
+    const onAbort = () => controller.abort();
     if (signal) {
       if (signal.aborted) controller.abort();
-      else signal.addEventListener('abort', () => controller.abort(), { once: true });
+      else signal.addEventListener("abort", onAbort, { once: true });
     }
     const resp = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
       signal: controller.signal,
-    }).finally(() => clearTimeout(timeoutId));
+    }).finally(() => {
+      clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener("abort", onAbort);
+    });
 
     if (!resp.ok) {
       const err = await resp.text().catch(() => "");
@@ -175,16 +181,20 @@ async function callOpenAI(
   } else {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const onAbort = () => controller.abort();
     if (signal) {
       if (signal.aborted) controller.abort();
-      else signal.addEventListener('abort', () => controller.abort(), { once: true });
+      else signal.addEventListener("abort", onAbort, { once: true });
     }
     const resp = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
       signal: controller.signal,
-    }).finally(() => clearTimeout(timeoutId));
+    }).finally(() => {
+      clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener("abort", onAbort);
+    });
 
     if (!resp.ok) {
       const err = await resp.text().catch(() => "");
@@ -230,6 +240,8 @@ export async function chat(options: ChatOptions & { enableTools?: boolean; works
 
   while (iterations < maxIterations) {
     iterations++;
+    // 请求被取消（切换会话/用户中止）：停止工具循环，不再发起下一轮调用
+    if (signal?.aborted) break;
     const toolsPayload = options.enableTools ? aiToolsDefinition : undefined;
     
     // 如果这是最后一步或者不启用 tool stream，我们把 onChunk 传下去，
@@ -270,8 +282,20 @@ export async function chat(options: ChatOptions & { enableTools?: boolean; works
             });
             continue;
           }
+          // 确认弹窗期间请求被取消：不得再执行工具（否则用户以为已取消，
+          // 写文件/执行命令等危险操作仍会发生）
+          if (signal?.aborted) {
+            currentMessages.push({
+              role: "tool",
+              name: tc.function.name,
+              tool_call_id: tc.id,
+              content: `Request was cancelled before executing tool "${tc.function.name}".`,
+            });
+            continue;
+          }
         }
 
+        if (signal?.aborted) break;
         const toolResult = await executeAiTool(tc.function.name, argsObj, options.workspaceRoot || "");
         currentMessages.push({
           role: "tool",

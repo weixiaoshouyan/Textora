@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAppStore, getActiveTab } from "../store/useAppStore";
+import { TextSelection } from "@milkdown/prose/state";
 import { showPrompt } from "../ui/showPrompt";
 import { Macro, MacroRecorder, MacroPlayer, saveMacro, getMacros } from "../editor/macro";
 import {
@@ -92,6 +93,9 @@ function executeShortcut(id: string, _e: KeyboardEvent): void {
     case "view.toggleTypewriter":
       s.toggleTypewriter();
       break;
+    case "view.toggleSplit":
+      s.toggleSplitView();
+      break;
     case "tabs.close": {
       const a = getActiveTab(s);
       if (a) s.closeTab(a.id);
@@ -158,18 +162,68 @@ function saveBookmarks(bms: Bookmark[]) {
   } catch { /* ignore */ }
 }
 
+/**
+ * 获取当前光标所在行（0 起）。
+ * 源码/代码模式读 textarea；WYSIWYG（Milkdown）模式用 ProseMirror view——
+ * 否则书签在 WYSIWYG 模式下恒落在第 0 行。
+ */
+function getCursorLine(): number {
+  const ta = document.querySelector(".textora-code-textarea") as HTMLTextAreaElement | null;
+  if (ta) {
+    const pos = ta.selectionStart;
+    return ta.value.slice(0, pos).split("\n").length - 1;
+  }
+  const view = useAppStore.getState().editorView;
+  if (view?.state?.selection) {
+    const pos = view.state.selection.from;
+    // textBetween 以 \n 连接文本块：行数 ≈ 光标前块间换行数，与 CodeEditor 行号语义一致
+    const text = view.state.doc.textBetween(0, pos, "\n", "\n");
+    return text.split("\n").length - 1;
+  }
+  return 0;
+}
+
+/** 移动光标到指定行（0 起）。源码模式用 textarea；WYSIWYG 模式定位到第 line 个文本块。 */
+function moveCursorToLine(line: number): void {
+  const ta = document.querySelector(".textora-code-textarea") as HTMLTextAreaElement | null;
+  if (ta) {
+    const lines = ta.value.split("\n");
+    let pos = 0;
+    for (let i = 0; i < line && i < lines.length; i++) {
+      pos += lines[i].length + 1;
+    }
+    ta.focus();
+    ta.setSelectionRange(pos, pos);
+    return;
+  }
+  const view = useAppStore.getState().editorView;
+  if (!view?.state) return;
+  const doc = view.state.doc;
+  let blockIdx = 0;
+  let targetPos: number | null = null;
+  doc.descendants((node: { isTextblock: boolean }, pos: number) => {
+    if (targetPos !== null) return false;
+    if (node.isTextblock) {
+      if (blockIdx === line) {
+        targetPos = pos;
+        return false;
+      }
+      blockIdx++;
+    }
+    return true;
+  });
+  if (targetPos === null) targetPos = doc.content.size; // 超出末尾：定位到文档末尾
+  const tr = view.state.tr.setSelection(TextSelection.create(doc, targetPos));
+  view.dispatch(tr.scrollIntoView());
+  view.focus();
+}
+
 function toggleBookmark() {
   const s = useAppStore.getState();
   const tab = getActiveTab(s);
   if (!tab?.path) return;
 
-  // Get cursor line from textarea
-  const ta = document.querySelector(".textora-code-textarea") as HTMLTextAreaElement | null;
-  let line = 0;
-  if (ta) {
-    const pos = ta.selectionStart;
-    line = ta.value.slice(0, pos).split("\n").length - 1;
-  }
+  const line = getCursorLine();
 
   const path = tab.path;
   const bms = getBookmarks();
@@ -193,12 +247,7 @@ function navigateBookmark(dir: number) {
   const tab = getActiveTab(s);
   if (!tab?.path) return;
 
-  const ta = document.querySelector(".textora-code-textarea") as HTMLTextAreaElement | null;
-  let currentLine = 0;
-  if (ta) {
-    const pos = ta.selectionStart;
-    currentLine = ta.value.slice(0, pos).split("\n").length - 1;
-  }
+  const currentLine = getCursorLine();
 
   const path = tab.path;
   const bms = getBookmarks().filter(b => b.path === path);
@@ -214,15 +263,7 @@ function navigateBookmark(dir: number) {
   }
 
   if (target) {
-    const lines = (ta?.value || "").split("\n");
-    let pos = 0;
-    for (let i = 0; i < target.line && i < lines.length; i++) {
-      pos += lines[i].length + 1;
-    }
-    if (ta) {
-      ta.focus();
-      ta.setSelectionRange(pos, pos);
-    }
+    moveCursorToLine(target.line);
   }
 }
 

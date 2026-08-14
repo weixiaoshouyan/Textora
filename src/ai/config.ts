@@ -165,11 +165,14 @@ export async function saveProviderConfigs(configs: ProviderConfig[]): Promise<vo
         }
       } catch { /* ignore parse error */ }
     }
-    // 2. 保存当前 configs 的 apiKey 到 safeStorage
+    // 2. 保存当前 configs 的 apiKey 到 safeStorage；apiKey 被清空（用户删除）时
+    //    必须删除旧 secret，否则重启后 loadAllApiKeys 会把旧 key 读回来（密钥"复活"）
     for (const c of configs) {
       const secretKey = SECRET_PREFIX + c.id;
       if (c.apiKey) {
         await invoke("store_secret", { key: secretKey, value: c.apiKey });
+      } else {
+        try { await invoke("delete_secret", { key: secretKey }); } catch { /* ignore */ }
       }
     }
     // 3. 保存不含 apiKey 的配置

@@ -133,6 +133,9 @@ export default function App() {
   const currentPath = useAppStore((s) => s.currentPath);
   const activeTabId = useAppStore((s) => s.activeTabId);
   const activeTab = useAppStore((s) => getActiveTab(s));
+  const restoredDirtyTabs = useAppStore((s) => s.restoredDirtyTabs);
+  const dismissRestoredDirty = useAppStore((s) => s.dismissRestoredDirty);
+  const discardRestoredDirty = useAppStore((s) => s.discardRestoredDirty);
 
   const [fileInfoPath, setFileInfoPath] = useState<string | null>(null);
 
@@ -235,6 +238,40 @@ export default function App() {
             filePath={fileInfoPath}
             onClose={() => setFileInfoPath(null)}
           />
+        )}
+        {/* 崩溃恢复提示条：上次会话的未保存修改已恢复，可保留或丢弃（不静默覆盖磁盘） */}
+        {restoredDirtyTabs.length > 0 && (
+          <div
+            role="status"
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-lg shadow-lg"
+            style={{
+              background: "var(--textora-bg-elev)",
+              border: "1px solid var(--textora-border)",
+              color: "var(--textora-fg)",
+              maxWidth: "min(640px, calc(100vw - 32px))",
+            }}
+          >
+            <span style={{ fontSize: 13, lineHeight: 1.5 }}>
+              {tFor(useLocale.getState().locale)("restore.dirtyTitle").replace("{count}", String(restoredDirtyTabs.length))}
+              <span style={{ display: "block", color: "var(--textora-fg-muted)", fontSize: 12 }}>
+                {tFor(useLocale.getState().locale)("restore.dirtyMessage")}
+              </span>
+            </span>
+            <button
+              className="textora-btn"
+              onClick={() => { void discardRestoredDirty(); }}
+              style={{ whiteSpace: "nowrap" }}
+            >
+              {tFor(useLocale.getState().locale)("restore.discard")}
+            </button>
+            <button
+              className="textora-btn textora-btn-primary"
+              onClick={() => dismissRestoredDirty()}
+              style={{ whiteSpace: "nowrap" }}
+            >
+              {tFor(useLocale.getState().locale)("restore.keep")}
+            </button>
+          </div>
         )}
       </div>
     </ErrorBoundary>

@@ -189,6 +189,8 @@ export function getLogFilePath(): string {
 
 /**
  * 读取最近的日志行
+ * 只读文件尾部（最多 2MB 缓冲）而非整个文件：日志可增长到数十 MB，
+ * readFileSync 整读会阻塞主进程事件循环，且该函数由 IPC 直接调用（可被高频触发）。
  */
 export function getRecentLogs(lines: number = 100): string {
   try {
@@ -200,9 +202,19 @@ export function getRecentLogs(lines: number = 100): string {
 
     // 校验 lines 参数，避免非法值导致异常或整文件输出
     const safeLines = Number.isFinite(lines) ? Math.min(10000, Math.max(1, Math.floor(lines))) : 100;
-    const content = fs.readFileSync(logPath, 'utf-8');
-    const allLines = content.split('\n');
-    return allLines.slice(-safeLines).join('\n');
+    const MAX_TAIL_BYTES = 2 * 1024 * 1024;
+    const fd = fs.openSync(logPath, 'r');
+    try {
+      const stat = fs.fstatSync(fd);
+      const readBytes = Math.min(stat.size, MAX_TAIL_BYTES);
+      const buf = Buffer.alloc(readBytes);
+      fs.readSync(fd, buf, 0, readBytes, stat.size - readBytes);
+      const tail = buf.toString('utf-8');
+      const allLines = tail.split('\n');
+      return allLines.slice(-safeLines).join('\n');
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch (err) {
     return `Failed to read logs: ${err instanceof Error ? err.message : String(err)}`;
   }

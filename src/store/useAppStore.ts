@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke, listen, message } from "../ipc";
+import { invoke, listen, messageChoice } from "../ipc";
 import type {
   AppState, FsChangeEvent, Settings, Tab,
 } from "./types";
@@ -145,6 +145,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
 
       let restoredCount = 0;
+      const restoredDirty: Array<{ id: string; path: string }> = [];
       for (const { path } of sessionTabs) {
         // 限制恢复数量，避免一次打开过多标签导致卡顿
         if (restoredCount >= SESSION_RESTORE.MAX_TABS) break;
@@ -185,11 +186,18 @@ export const useAppStore = create<AppState>()((set, get) => {
             hexPreview: res.hex_preview,
           };
           set((s) => ({ tabs: [...s.tabs, tab] }));
+          // 记录恢复的未保存修改（供 UI 提示「已恢复，可丢弃」）
+          if (dirty) {
+            restoredDirty.push({ id, path: res.path });
+          }
           restoredCount++;
         } catch (err) {
           // 文件可能已删除/移动/权限不足
           console.warn(`[Session] Failed to reload tab: ${path} —`, err);
         }
+      }
+      if (restoredDirty.length > 0) {
+        set({ restoredDirtyTabs: restoredDirty });
       }
 
       // 恢复完成后，用实际成功打开的标签回写 session，清除无效路径
@@ -241,6 +249,38 @@ export const useAppStore = create<AppState>()((set, get) => {
     autoSaveTimer: null,
     settings: { ...DEFAULT_SETTINGS, ...safeReadLocal<Partial<Settings>>(SETTINGS_KEY, {}, (v) => v !== null && typeof v === "object" && !Array.isArray(v)) },
     externalChanges: {},
+    restoredDirtyTabs: [],
+
+    // ===== 崩溃恢复提示 =====
+    dismissRestoredDirty: () => set({ restoredDirtyTabs: [] }),
+
+    discardRestoredDirty: async () => {
+      const restored = get().restoredDirtyTabs;
+      if (restored.length === 0) return;
+      // 逐个从磁盘重新加载，覆盖恢复的缓存内容并清除 dirty
+      for (const { id, path } of restored) {
+        try {
+          const res = await invoke("open_file", { path });
+          set((s) => ({
+            tabs: s.tabs.map((t) =>
+              t.id === id
+                ? {
+                    ...t,
+                    content: res.text ?? t.content,
+                    encoding: res.encoding ?? t.encoding,
+                    lineEnding: res.line_ending === "crlf" ? "crlf" : "lf",
+                    dirty: false,
+                  }
+                : t
+            ),
+          }));
+        } catch {
+          // 文件已不存在：保留恢复内容（这是用户唯一的副本）
+        }
+      }
+      set({ restoredDirtyTabs: [] });
+      syncFromActive();
+    },
 
     // ===== 领域切片（文件/工作区/AI/UI） =====
     ...fileSlice(set, get, syncFromActive),
@@ -314,11 +354,20 @@ export const useAppStore = create<AppState>()((set, get) => {
 
               pendingPromptTabs.add(tabKey);
               try {
-                const choice = await message(
+                const choice = await messageChoice(
                   tt("dialog.fileChangedMsg").replace("{name}", tab.name),
-                  { title: tt("dialog.fileChangedTitle"), kind: "info" }
+                  {
+                    title: tt("dialog.fileChangedTitle"),
+                    kind: "info",
+                    buttons: [
+                      tt("dialog.reload"),
+                      tt("dialog.viewDiff"),
+                      tt("dialog.ignore"),
+                    ],
+                  }
                 );
-                if (choice) {
+                if (choice === 0) {
+                  // 重新加载：磁盘内容覆盖当前标签
                   try {
                     const res = await invoke("open_file", { path: tab.path! });
                     set((s) => ({
@@ -338,7 +387,27 @@ export const useAppStore = create<AppState>()((set, get) => {
                   } catch {
                     /* ignore */
                   }
+                } else if (choice === 1) {
+                  // 查看差异：读磁盘版本（不覆盖当前标签），打开 DiffView 对比
+                  try {
+                    const res = await invoke("open_file", { path: tab.path! });
+                    set({
+                      pendingExternalDiff: {
+                        path: tab.path!,
+                        diskText: res.text ?? "",
+                      },
+                      diffViewOpen: true,
+                    });
+                  } catch {
+                    /* ignore */
+                  }
+                  set((s) => {
+                    const next = { ...s.externalChanges };
+                    delete next[ev.path];
+                    return { externalChanges: next };
+                  });
                 } else {
+                  // 忽略本次外部变更
                   set((s) => {
                     const next = { ...s.externalChanges };
                     delete next[ev.path];

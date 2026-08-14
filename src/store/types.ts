@@ -97,6 +97,8 @@ export interface Settings {
   outlineVisible: boolean;
   sidebarWidth: number; // 侧边栏宽度（px）
   vimMode?: boolean;
+  pdfHeader?: boolean; // 导出 PDF 时显示页眉（文件名）
+  pdfFooter?: boolean; // 导出 PDF 时显示页码
 }
 
 export interface AppState {
@@ -134,6 +136,9 @@ export interface AppState {
   // UI 面板状态
   findReplaceOpen: boolean;
   setFindReplaceOpen: (open: boolean) => void;
+  /** 外部（如跨文件搜索面板）预填的查找词：FindReplace 打开时消费并清空 */
+  findReplaceInitialQuery: string | null;
+  setFindReplaceInitialQuery: (q: string | null) => void;
   quickOpenOpen: boolean;
   setQuickOpenOpen: (open: boolean) => void;
   searchInFilesOpen: boolean;
@@ -142,6 +147,9 @@ export interface AppState {
   setCommandPaletteOpen: (open: boolean) => void;
   diffViewOpen: boolean;
   setDiffViewOpen: (open: boolean) => void;
+  /** 外部变更对比请求：磁盘版本 vs 当前编辑版本（DiffView 消费后清空） */
+  pendingExternalDiff: { path: string; diskText: string } | null;
+  setPendingExternalDiff: (v: { path: string; diskText: string } | null) => void;
   graphViewOpen: boolean;
   setGraphViewOpen: (open: boolean) => void;
   pendingConfirm: PendingConfirm | null;
@@ -182,6 +190,13 @@ export interface AppState {
   setCodeEditorApi: (api: CodeEditorApi | null) => void;
   isCodeEditorActive: () => boolean;
   saveCursorState: () => void;
+
+  // 崩溃恢复提示：上次会话有未保存修改被恢复（可见可弃，而非静默覆盖磁盘）
+  restoredDirtyTabs: Array<{ id: string; path: string }>;
+  /** 收起提示条（修改仍保留在标签中，由用户自行决定保存时机） */
+  dismissRestoredDirty: () => void;
+  /** 丢弃恢复的未保存修改：从磁盘重新加载这些标签，回到磁盘内容 */
+  discardRestoredDirty: () => Promise<void>;
 
   // 跳转到行
   pendingJumpLine: number | null;

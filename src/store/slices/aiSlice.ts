@@ -105,11 +105,21 @@ export function aiSlice(set: SetFn, get: GetFn): Partial<AppState> {
         aiActiveSessionId: nextActiveId,
       });
       safeWriteLocal("textora.ai_sessions", nextSessions);
-      safeWriteLocal("textora.ai_active_session", nextActiveId);
+      // null 必须 removeItem：JSON.stringify(null) 会存成字符串 "null"，
+      // 重启后 safeReadLocalAiSession 把它当真实 id 返回，产生"幽灵会话"
+      if (nextActiveId === null) {
+        try { localStorage.removeItem("textora.ai_active_session"); } catch { /* ignore */ }
+      } else {
+        safeWriteLocal("textora.ai_active_session", nextActiveId);
+      }
     },
     setAiActiveSession: (id) => {
       set({ aiActiveSessionId: id });
-      safeWriteLocal("textora.ai_active_session", id);
+      if (id === null) {
+        try { localStorage.removeItem("textora.ai_active_session"); } catch { /* ignore */ }
+      } else {
+        safeWriteLocal("textora.ai_active_session", id);
+      }
     },
     updateAiSessionMessages: (id, messages: ChatMessage[]) => {
       const nextSessions = get().aiSessions.map((ses) => {
@@ -168,8 +178,16 @@ function safeReadAiSessions(): ChatSession[] {
 function safeReadLocalAiSession(): string | null {
   try {
     const raw = localStorage.getItem("textora.ai_active_session");
-    return raw === null || typeof raw === "string" ? raw : null;
+    if (raw === null) return null;
+    // 存储端用 safeWriteLocal（JSON.stringify）写入，值带引号（"session_xxx"）：
+    // 必须 JSON.parse，否则带引号的字符串永远匹配不上真实会话 id，
+    // 重启后 AI 面板"活动会话"高亮/定位全部失效
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === "string" && parsed !== "null") return parsed;
+    return null;
   } catch {
+    // 旧版本曾写入 JSON.stringify(null)（字符串 "null"）或损坏数据：归一化为 null，
+    // 否则 AI 面板出现找不到的"幽灵会话"
     return null;
   }
 }

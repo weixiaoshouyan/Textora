@@ -13,6 +13,7 @@
 import { invoke, saveDialog, message } from "../ipc";
 import { useAppStore } from "../store/useAppStore";
 import { sanitizeHtml as sanitizeHtmlDom } from "./htmlSanitizer";
+import { applySizeToHtml } from "./imageSize";
 
 export const sanitizeHtml = sanitizeHtmlDom;
 
@@ -83,6 +84,8 @@ async function getRenderedHtml(): Promise<string> {
     const transformer = Transformer.utilityStr(commonmark, gfm);
     const doc = transformer(raw);
     let html = sanitizeHtmlDom(transformer.nodeToHTML(doc));
+    // transformer 输出的 img 无 style：把 title="=WxH"（图片尺寸持久化）应用为宽高
+    html = applySizeToHtml(html);
     html = await inlineImages(html);
     return html;
   } catch {
@@ -199,6 +202,30 @@ export async function exportAsHTML() {
   }
 }
 
+/** 把渲染后的 HTML（含内联图片）复制到系统剪贴板，便于粘贴到邮件/富文本编辑器。 */
+export async function copyHtmlToClipboard(): Promise<boolean> {
+  const html = await getRenderedHtml();
+  try {
+    await navigator.clipboard.writeText(html);
+    return true;
+  } catch {
+    // 剪贴板不可用（权限/无焦点窗口）：回退到旧的 execCommand 方式
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = html;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
 // ============== DOCX (HTML) 导出 ==============
 export async function exportAsDOCX() {
   const s = useAppStore.getState();
@@ -279,7 +306,22 @@ export async function exportAsPDF() {
   });
   if (!target) return;
   try {
-    await invoke("export_pdf", { html: fullHtml, target_path: target });
+    // PDF 页眉/页码（设置面板开关）：模板中类名由 Chromium printToPDF 识别
+    const settings = useAppStore.getState().settings;
+    const pdfOptions: Record<string, unknown> = {
+      displayHeaderFooter: !!(settings.pdfHeader || settings.pdfFooter),
+      headerTemplate: settings.pdfHeader
+        ? `<div style="font-size:8px;width:100%;text-align:center;color:#666;padding:0 40px;">${escapeHtml(title)}</div>`
+        : "<div></div>",
+      footerTemplate: settings.pdfFooter
+        ? `<div style="font-size:8px;width:100%;text-align:center;color:#666;padding:0 40px;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`
+        : "<div></div>",
+    };
+    await invoke("export_pdf", {
+      html: fullHtml,
+      target_path: target,
+      pdf_options: pdfOptions,
+    });
     await message(`Exported to ${target}`, { title: "Export Complete" });
   } catch (e) {
     await message(String(e), { title: "Export Failed", kind: "error" });

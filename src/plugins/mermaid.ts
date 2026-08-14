@@ -91,7 +91,19 @@ function findMermaidBlocks(
 
 let idCounter = 0;
 
-// 渲染缓存：key 为 `${generation}-${pos}`，值记录代码哈希与渲染结果。
+/** 内容哈希：渲染缓存改用「代码内容」而非「位置」做键。
+ *  原先 `${generation}-${pos}` 的位置键在图表上方的任何输入都会使所有下方
+ *  图表位置偏移、缓存全部 miss，导致每次击键都重建 pending wrapper 并异步重渲
+ *  （闪烁 + 大图卡顿）。按内容键命中后，位置偏移不影响复用已渲染 SVG。 */
+function hashString(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return String(h >>> 0);
+}
+
+// 渲染缓存：key 为 `${generation}-${内容哈希}-${长度}`，值记录代码哈希与渲染结果。
 // 文档中其他位置打字触发 docChanged 时会重建所有图表 widget；
 // 内容未变的图表直接复用缓存，避免昂贵的 mermaid.render 每次都全量执行。
 const mermaidRenderCache = new Map<string, { hash: string; html: string }>();
@@ -106,9 +118,13 @@ export const mermaidPlugin = $prose(() => {
         const meta = tr.getMeta(mermaidKey);
         const bump = meta && typeof meta.bump === "number" ? meta.bump : prev.bump;
         if (!tr.docChanged && bump === prev.bump) return prev;
-        // 大文档降级：输入（docChanged 且非 bump）时跳过全量重建，
-        // 装饰位置由 ProseMirror 自动 mapping 跟随，内容在 bump 时刷新
-        if (tr.docChanged && bump === prev.bump && isLargeDoc(tr.doc)) return prev;
+        // 大文档降级：输入（docChanged 且非 bump）时跳过全量重建。
+        // 但 prev.set 对应的是旧 doc：ProseMirror 不会自动重映射插件返回的
+        // DecorationSet（viewDecorations 直接用当前 doc 渲染该 set），必须显式
+        // 用 tr.mapping 跟随，否则编辑后装饰位置漂移（widget 错位/覆盖新内容）
+        if (tr.docChanged && bump === prev.bump && isLargeDoc(tr.doc)) {
+          return { set: prev.set.map(tr.mapping, tr.doc), bump };
+        }
 
         const blocks = findMermaidBlocks(tr.doc);
         const decos: Decoration[] = [];
@@ -117,7 +133,7 @@ export const mermaidPlugin = $prose(() => {
         for (let i = 0; i < blocks.length; i++) {
           const b = blocks[i];
           const code = b.code.trim();
-          const cacheKey = `${genSnapshot}-${b.pos}`;
+          const cacheKey = `${genSnapshot}-${hashString(code)}-${code.length}`;
           const cached = mermaidRenderCache.get(cacheKey);
           if (cached && cached.hash === code) {
             // 代码未变化：直接复用上次渲染结果，跳过昂贵的异步 mermaid.render

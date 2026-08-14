@@ -60,11 +60,20 @@ function getEditorView(): EditorView | null {
   return (useAppStore.getState().editorView as EditorView | null) ?? null;
 }
 
-export function insertMarkdownAtCursor(md: string) {
+export function insertMarkdownAtCursor(md: string, expectedTabId?: string) {
+  const s = useAppStore.getState();
+  // 保存图片期间用户可能已切换/关闭了目标文档：此时 editorView 已属于其他标签，
+  // 直接插入会把图片链接写进错误文档。捕获操作起始时的标签 id 做校验，不一致则提示。
+  if (expectedTabId && s.activeTabId !== expectedTabId) {
+    void message("图片已保存到 assets/，但编辑文档已切换，链接未自动插入，请手动插入。", {
+      title: "图片已保存",
+      kind: "info",
+    });
+    return;
+  }
   const view = getEditorView();
   if (!view) {
     // 没有 view：直接更新 store.content（在末尾追加）
-    const s = useAppStore.getState();
     const next = s.content ? `${s.content}\n${md}\n` : `${md}\n`;
     s.setContent(next);
     return;
@@ -136,7 +145,7 @@ export async function saveImageBase64(
   return fullPath;
 }
 
-export async function insertImageFromPath(absPath: string, alt: string) {
+export async function insertImageFromPath(absPath: string, alt: string, expectedTabId?: string) {
   // 用相对路径插入
   const ws = useAppStore.getState().workspaceRoot;
   let mdPath = absPath;
@@ -144,7 +153,7 @@ export async function insertImageFromPath(absPath: string, alt: string) {
     mdPath = toRelative(ws, absPath);
   }
   const md = `![${alt || "image"}](${mdPath})`;
-  insertMarkdownAtCursor(md);
+  insertMarkdownAtCursor(md, expectedTabId);
 }
 
 function joinPath(a: string, b: string) {
@@ -169,6 +178,9 @@ function toRelative(root: string, abs: string): string {
 const IMAGE_MAX_SIZE = 50 * 1024 * 1024;
 
 export async function ingestImageFile(file: File, alt?: string) {
+  // 捕获操作起始时的活动标签 id：保存是异步的（两次 IPC 往返），期间用户可能
+  // 切换文档，插入前需校验目标未变（见 insertMarkdownAtCursor 的 expectedTabId 守卫）
+  const expectedTabId = useAppStore.getState().activeTabId;
   try {
     if (file.size > IMAGE_MAX_SIZE) {
       await message(`图片超过 50MB 限制，已忽略：${file.name}`, {
@@ -191,7 +203,7 @@ export async function ingestImageFile(file: File, alt?: string) {
     const ext = (file.name.split(".").pop() || "png").toLowerCase();
     const fullPath = await saveImageBase64(base64, ext);
     if (!fullPath) return null;
-    await insertImageFromPath(fullPath, alt || file.name);
+    await insertImageFromPath(fullPath, alt || file.name, expectedTabId ?? undefined);
     return fullPath;
   } catch (e) {
     console.error("Failed to ingest image:", e);

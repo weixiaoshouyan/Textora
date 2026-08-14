@@ -15,6 +15,8 @@ import { setShikiTheme } from "../plugins/shikiClient";
 import { mathPlugin, bumpMath } from "../plugins/math";
 import { mermaidPlugin, setMermaidTheme, bumpMermaid } from "../plugins/mermaid";
 import { tocPlugin, bumpToc, attachTocJump } from "../plugins/toc";
+// Markdown 快捷键（Typora 系：标题 / 引用 / 代码块）
+import { markdownShortcuts } from "../plugins/markdownShortcuts";
 // 编辑器交互处理器（专注 / 打字机 / 图片）
 import { attachFocusMode } from "./focusMode";
 import { attachTypewriter } from "./typewriter";
@@ -104,10 +106,12 @@ export function MilkdownEditor({ content, onChange, readOnly = false }: Props) {
       .use(gfm)
       .use(history)
       .use(listener)
-      // 高级功能插件
+      // 高级功能插件（数学 / 图表 / 目录）
       .use(mathPlugin)
       .use(mermaidPlugin)
-      .use(tocPlugin);
+      .use(tocPlugin)
+      // Markdown 编辑快捷键（标题 / 引用 / 代码块）
+      .use(markdownShortcuts);
 
     editor.create()
       .then(() => {

@@ -14,12 +14,18 @@ import {
   validateWorkspacePath,
 } from "../shared";
 import { FILE_SIZE_LIMITS } from "../constants";
+import { checkRateLimit } from "../rateLimiter";
+import log from 'electron-log/main';
 
 export const MAX_FILES_SCANNED = 10_000;
 export const MAX_TOTAL_BYTES_SCANNED = 512 * 1024 * 1024;
 export const MAX_LISTED_FILES = 50_000;
 /** 正则模式下参与匹配的最大单行长度，避免超长行触发灾难性回溯 */
 const MAX_REGEX_LINE_LENGTH = 4096;
+/** 单文件匹配时间预算（毫秒）：正则 exec 本身无法中断，但可以在行循环间
+ *  检查时间预算，超过则跳过该文件剩余行——配合 MAX_REGEX_LINE_LENGTH 与
+ *  isDangerousRegex 启发式，把灾难性回溯的最坏影响限制在单个文件的一次匹配 */
+const MATCH_TIME_BUDGET_MS = 250;
 
 import { isDangerousRegex } from "../../shared/safeRegex";
 export { isDangerousRegex };
@@ -113,8 +119,16 @@ export async function searchWorkspace(
       const buf = await fsp.readFile(file.fullPath);
       if (looksLikeBinary(buf)) return;
       const lines = buf.toString("utf-8").split("\n");
+      const matchStartedAt = Date.now();
       for (let i = 0; i < lines.length; i++) {
         if (aborted || options.signal?.aborted) { aborted = true; return; }
+        // 时间预算：每 256 行检查一次（Date.now 调用有开销），超过预算跳过该文件
+        // 剩余行并标记结果不完整。正则 exec 无法中断，但配合单行长度上限，
+        // 最坏情况限制为「单个文件的一次匹配卡顿」
+        if ((i & 255) === 0 && Date.now() - matchStartedAt > MATCH_TIME_BUDGET_MS) {
+          truncated = true;
+          return;
+        }
         const line = lines[i];
         let col = -1;
         if (regex) {
@@ -169,6 +183,24 @@ export function registerSearchHandlers(): void {
   });
 
   ipcMain.handle("textora:search_in_files", async (_evt, root: string, query: string, useRegex: boolean, caseSensitive: boolean, fileFilter?: string, excludeDirs?: string): Promise<SearchResponse> => {
+    // IPC 边界类型校验：恶意/异常参数（如 query 为数字）会在
+    // query.toLowerCase()/split 处抛 TypeError 污染主进程日志，
+    // 非法参数一律按空搜索处理（校验失败返回空结果，不 throw 以免渲染层崩溃）
+    if (
+      typeof root !== "string" ||
+      typeof query !== "string" ||
+      typeof useRegex !== "boolean" ||
+      typeof caseSensitive !== "boolean" ||
+      (fileFilter !== undefined && typeof fileFilter !== "string") ||
+      (excludeDirs !== undefined && typeof excludeDirs !== "string")
+    ) {
+      return { matches: [], truncated: false };
+    }
+    // 速率限制：搜索会扫描并读入最多 512MB 文件，失控渲染层高频调用会打爆主进程
+    if (!checkRateLimit('textora:search_in_files')) {
+      log.warn('Rate limit exceeded for textora:search_in_files');
+      throw new Error('Search rate limit exceeded. Please wait before searching again.');
+    }
     const checked = await validateWorkspacePath(root);
     if (!checked.ok) throw new Error(checked.message);
     root = checked.resolved;

@@ -95,6 +95,14 @@ export async function findAllInDocAsync(
 ): Promise<FindResult[]> {
   const out: FindResult[] = [];
   if (!query) return out;
+  // 编辑器可能已销毁（切换标签/关闭文件）：view.state 访问会抛错，
+  // 全部路径统一返回空结果，避免 unhandled rejection
+  let doc;
+  try {
+    doc = view.state.doc;
+  } catch {
+    return out;
+  }
   let re: RegExp;
   if (opts?.regex) {
     // ReDoS 防护：拒绝危险正则在渲染进程主线程上执行（灾难性回溯会卡死整个界面）
@@ -110,7 +118,7 @@ export async function findAllInDocAsync(
   }
   // 先收集文本节点（引用快照），分批执行正则
   const textNodes: { text: string; from: number; skip: boolean }[] = [];
-  view.state.doc.descendants((node, pos, parent) => {
+  doc.descendants((node, pos, parent) => {
     if (!node.isText) return true;
     let skip = false;
     if (parent && parent.type) {
@@ -268,12 +276,22 @@ export async function replaceAllInDocAsync(
   opts?: FindOpts
 ): Promise<number> {
   if (!query) return 0;
-  const docSnapshot = view.state.doc;
+  let docSnapshot;
+  try {
+    docSnapshot = view.state.doc;
+  } catch {
+    return 0; // 编辑器已销毁
+  }
   const matches = await findAllInDocAsync(view, query, opts);
   if (!matches.length) return 0;
-  // 分片匹配期间用户编辑了文档：位置已过期，放弃本次替换
-  if (view.state.doc !== docSnapshot) return 0;
-  return applyReplacements(view, matches, replacement);
+  try {
+    // 分片匹配期间用户编辑了文档：位置已过期，放弃本次替换
+    if (view.state.doc !== docSnapshot) return 0;
+    return applyReplacements(view, matches, replacement);
+  } catch {
+    // 编辑器在异步匹配期间被销毁（切换标签/关闭文件）：放弃本次替换
+    return 0;
+  }
 }
 
 function escapeRegExp(s: string) {
