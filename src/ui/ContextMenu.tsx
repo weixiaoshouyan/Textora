@@ -85,6 +85,26 @@ function MenuPanel({
 }) {
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // 鼠标是否在展开的子菜单内：子菜单 Portal 到 body 后不再是行的 DOM 后代，
+  // 鼠标从行移入子菜单会先触发行的 mouseleave——若直接清空 hoverIdx，
+  // 子菜单会在鼠标到达前卸载（菜单"抖动/不可点击"，表现为界面卡死）。
+  // 用 ref 标记 + 状态机判断，不依赖 mouseover/mouseout 的事件顺序。
+  const inSubRef = useRef(false);
+
+  const handleRowLeave = () => {
+    // 鼠标已进入子菜单：保持展开（子菜单的 enter 先于行的 leave 设置标记，
+    // 或鼠标直接落在子菜单上时亦然）
+    if (inSubRef.current) return;
+    setHoverIdx(null);
+  };
+  const handleSubEnter = () => {
+    inSubRef.current = true;
+  };
+  const handleSubLeave = () => {
+    inSubRef.current = false;
+    // 鼠标离开子菜单：关闭（若移回父行，行的 enter 会重新展开）
+    setHoverIdx(null);
+  };
   const anchor = hoverIdx !== null ? rowRefs.current[hoverIdx] : null;
 
   return (
@@ -134,7 +154,7 @@ function MenuPanel({
                   : "var(--textora-fg)",
             }}
             onMouseEnter={() => setHoverIdx(idx)}
-            onMouseLeave={() => setHoverIdx(null)}
+            onMouseLeave={handleRowLeave}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               if (hasSub) return;
@@ -159,6 +179,8 @@ function MenuPanel({
                 items={item.submenu!}
                 onClose={onClose}
                 level={level + 1}
+                onEnter={handleSubEnter}
+                onLeave={handleSubLeave}
               />
             )}
           </div>
@@ -182,11 +204,17 @@ function SubMenu({
   items,
   onClose,
   level,
+  onEnter,
+  onLeave,
 }: {
   anchor: HTMLElement;
   items: CtxMenuItem[];
   onClose: () => void;
   level: number;
+  /** 鼠标进入子菜单：父级保持展开 */
+  onEnter: () => void;
+  /** 鼠标离开子菜单：父级关闭 */
+  onLeave: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -197,10 +225,11 @@ function SubMenu({
     const a = anchor.getBoundingClientRect();
     const w = el.offsetWidth;
     const h = el.offsetHeight;
-    // 右侧优先；放不下则翻到锚点左侧
-    let nx = a.right + 4;
+    // 右侧优先，0 间隙紧贴锚点：行与子菜单之间不留空隙，
+    // 否则指针慢速跨越空隙时会先触发行的 mouseleave 导致子菜单卸载（hover 断链）
+    let nx = a.right;
     if (nx + w > window.innerWidth - 8) {
-      nx = a.left - w - 4;
+      nx = a.left - w;
     }
     nx = Math.max(4, nx);
     let ny = a.top;
@@ -218,6 +247,8 @@ function SubMenu({
       onContextMenu={(e) => e.preventDefault()}
       // 阻止点击子菜单内部时冒泡到 document 的 mousedown 外点关闭监听
       onMouseDown={(e) => e.stopPropagation()}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
     >
       <MenuPanel items={items} onClose={onClose} level={level} />
     </div>,

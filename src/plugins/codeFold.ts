@@ -1,208 +1,166 @@
 /**
- * Milkdown Code Folding Plugin
- * 
- * Adds fold/unfold icons to code blocks and headings in the Milkdown editor.
- * Uses DOM-based approach (MutationObserver) similar to codeHighlight plugin.
+ * Milkdown 折叠插件（标题 / 代码块）。
+ *
+ * 折叠按钮用 ProseMirror Decoration widget 注入（PM 管理、随文档映射），
+ * 不再直接 appendChild 到 PM 管理的 <h1>/<pre> 节点内部——
+ * 否则 PM 的 DOM observer 把按钮当作「未授权 DOM 变更」反复 dispatch 修复
+ * 事务，形成 dispatch → updateStateInner → updatePluginViews → dispatch 的
+ * 无限循环（渲染进程卡死，右键菜单操作如"标题 1"触发块类型重建时必现）。
+ *
+ * 折叠/展开仍操作 DOM：data-folded 属性标记状态（PM 复用节点时保留，
+ * 节点重建时状态丢失可接受），隐藏兄弟用 display，代码块用 max-height。
  */
+import { Plugin, PluginKey } from "@milkdown/prose/state";
+import { Decoration, DecorationSet } from "@milkdown/prose/view";
+import { $prose } from "@milkdown/utils";
 import type { EditorView } from "@milkdown/prose/view";
+import { isLargeDoc } from "./docGuard";
 
-const FOLD_ATTR = "data-textora-foldable";
 const FOLDED_ATTR = "data-textora-folded";
 const FOLD_BTN_CLASS = "textora-fold-btn";
 
-/**
- * Attach code folding to Milkdown editor view
- */
-export function attachCodeFolding(view: EditorView): () => void {
-  const dom = view.dom as HTMLElement;
+/** 折叠按钮：点击时根据 getPos 找到对应节点 DOM，切换折叠状态 */
+function createFoldButton(
+  view: EditorView,
+  getPos: () => number | undefined,
+  isCodeBlock: boolean,
+): HTMLSpanElement {
+  const btn = document.createElement("span");
+  btn.className = FOLD_BTN_CLASS;
+  btn.textContent = "▼";
+  btn.title = "折叠/展开";
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const pos = getPos();
+    if (pos == null) return;
+    const nodeDom = view.nodeDOM(pos);
+    if (!(nodeDom instanceof HTMLElement)) return;
 
-  // Add base styles
-  const styleId = "textora-fold-styles";
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement("style");
-    style.id = styleId;
-    style.textContent = `
-      .${FOLD_BTN_CLASS} {
-        position: absolute;
-        left: -20px;
-        top: 2px;
-        width: 16px;
-        height: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        font-size: 10px;
-        color: var(--textora-fg-muted);
-        border-radius: 3px;
-        user-select: none;
-        z-index: 10;
-      }
-      .${FOLD_BTN_CLASS}:hover {
-        background: var(--textora-bg-muted);
-        color: var(--textora-fg);
-      }
-      [${FOLDED_ATTR}="true"] > .textora-fold-content {
-        display: none;
-      }
-      [${FOLDED_ATTR}="true"]::after {
-        content: " ...";
-        color: var(--textora-fg-muted);
-        font-style: italic;
-      }
-      .milkdown h1, .milkdown h2, .milkdown h3,
-      .milkdown h4, .milkdown h5, .milkdown h6,
-      .milkdown pre {
-        position: relative;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  function processNode(node: Element) {
-    if (node.hasAttribute(FOLD_ATTR)) return;
-    
-    const tagName = node.tagName.toLowerCase();
-    const isHeading = /^h[1-6]$/.test(tagName);
-    const isCodeBlock = tagName === "pre" && node.classList.contains("milkdown-code-block");
-
-    if (!isHeading && !isCodeBlock) return;
-
-    node.setAttribute(FOLD_ATTR, "true");
-    (node as HTMLElement).style.position = "relative";
-
-    // Create fold button
-    const btn = document.createElement("span");
-    btn.className = FOLD_BTN_CLASS;
-    btn.textContent = "▼";
-    btn.title = "折叠/展开";
-    btn.setAttribute("data-textora-fold-btn", "true");
-    // 使用绝对定位，避免影响 heading 的 textContent
-    btn.style.position = "absolute";
-    btn.style.left = "-20px";
-    node.appendChild(btn);
-
-    // For headings: track sibling nodes that will be hidden (CSS-based, no DOM wrapping)
-    if (isHeading) {
-      const level = parseInt(tagName[1]);
-      const contentNodes: Element[] = [];
-      let sibling = node.nextElementSibling;
-      while (sibling) {
-        const sibTag = sibling.tagName.toLowerCase();
-        if (/^h[1-6]$/.test(sibTag)) {
-          const sibLevel = parseInt(sibTag[1]);
-          if (sibLevel <= level) break;
-        }
-        contentNodes.push(sibling);
-        sibling = sibling.nextElementSibling;
-      }
-      // 暂存待隐藏的兄弟节点，供 click 处理器使用（不移动 DOM）
-      (node as any)._textoraFoldSiblings = contentNodes;
-    }
-
-    // Click handler
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const isFolded = node.getAttribute(FOLDED_ATTR) === "true";
-      if (isFolded) {
-        // Unfold
-        node.removeAttribute(FOLDED_ATTR);
-        btn.textContent = "▼";
-        // 恢复 heading 兄弟节点显示
-        if (isHeading) {
-          const hidden = (node as any)._textoraHiddenNodes as HTMLElement[] | undefined;
-          if (hidden) {
-            hidden.forEach(n => { n.style.display = ""; });
-            (node as any)._textoraHiddenNodes = undefined;
-          }
-        }
-        // 恢复代码块显示
-        if (isCodeBlock) {
-          const code = node.querySelector("code");
-          if (code) {
-            code.style.maxHeight = "";
-            code.style.overflow = "";
-          }
+    const folded = nodeDom.getAttribute(FOLDED_ATTR) === "true";
+    if (folded) {
+      // 展开
+      nodeDom.removeAttribute(FOLDED_ATTR);
+      btn.textContent = "▼";
+      if (isCodeBlock) {
+        const code = nodeDom.querySelector("code");
+        if (code) {
+          code.style.maxHeight = "";
+          code.style.overflow = "";
         }
       } else {
-        // Fold
-        node.setAttribute(FOLDED_ATTR, "true");
-        btn.textContent = "▶";
-        // 隐藏 heading 兄弟节点（仅设置 display，不移动 DOM）
-        if (isHeading) {
-          const siblings = (node as any)._textoraFoldSiblings as Element[] | undefined;
-          if (siblings && siblings.length > 0) {
-            const hiddenNodes: HTMLElement[] = [];
-            siblings.forEach(s => {
-              if (s instanceof HTMLElement) {
-                hiddenNodes.push(s);
-                s.style.display = "none";
-              }
-            });
-            (node as any)._textoraHiddenNodes = hiddenNodes;
+        // 恢复标题后续兄弟节点显示（直到下一个同级或更高级标题）
+        const level = parseInt(nodeDom.tagName[1], 10);
+        let sib = nodeDom.nextElementSibling;
+        while (sib) {
+          const tag = sib.tagName.toLowerCase();
+          if (/^h[1-6]$/.test(tag)) {
+            if (parseInt(tag[1], 10) <= level) break;
           }
-        }
-        // 折叠代码块：使用 max-height + overflow，不包裹 DOM
-        if (isCodeBlock) {
-          const code = node.querySelector("code");
-          if (code) {
-            code.style.maxHeight = "0";
-            code.style.overflow = "hidden";
-          }
+          (sib as HTMLElement).style.display = "";
+          sib = sib.nextElementSibling;
         }
       }
-    });
-  }
-
-  // Process existing nodes
-  function processAll() {
-    dom.querySelectorAll("h1, h2, h3, h4, h5, h6, pre.milkdown-code-block").forEach(processNode);
-  }
-
-  // Observe DOM changes
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      mutation.addedNodes.forEach((n) => {
-        if (n instanceof Element) {
-          const tag = n.tagName.toLowerCase();
-          if (/^h[1-6]$/.test(tag) || (tag === "pre" && n.classList.contains("milkdown-code-block"))) {
-            processNode(n);
-          }
-          n.querySelectorAll("h1, h2, h3, h4, h5, h6, pre.milkdown-code-block").forEach(processNode);
+    } else {
+      // 折叠
+      nodeDom.setAttribute(FOLDED_ATTR, "true");
+      btn.textContent = "▶";
+      if (isCodeBlock) {
+        const code = nodeDom.querySelector("code");
+        if (code) {
+          code.style.maxHeight = "0";
+          code.style.overflow = "hidden";
         }
-      });
-    }
-  });
-
-  observer.observe(dom, { childList: true, subtree: true });
-
-  // Initial processing
-  processAll();
-
-  // Re-process on theme change
-  const themeObserver = new MutationObserver((mutations) => {
-    for (const m of mutations) {
-      if (m.type === "attributes" && m.attributeName === "class") {
-        const target = m.target as HTMLElement;
-        // 只在根元素或主题相关 class 变化时重新处理
-        if (target === dom || target.hasAttribute("data-theme")) {
-          setTimeout(processAll, 100);
+      } else {
+        const level = parseInt(nodeDom.tagName[1], 10);
+        let sib = nodeDom.nextElementSibling;
+        while (sib) {
+          const tag = sib.tagName.toLowerCase();
+          if (/^h[1-6]$/.test(tag)) {
+            if (parseInt(tag[1], 10) <= level) break;
+          }
+          (sib as HTMLElement).style.display = "none";
+          sib = sib.nextElementSibling;
         }
       }
     }
   });
-  themeObserver.observe(dom, { attributes: true, attributeFilter: ["class"], subtree: true });
-
-  // Cleanup function
-  return () => {
-    observer.disconnect();
-    themeObserver.disconnect();
-    dom.querySelectorAll(`[${FOLD_ATTR}]`).forEach(node => {
-      const btn = node.querySelector(`.${FOLD_BTN_CLASS}`);
-      btn?.remove();
-      node.removeAttribute(FOLD_ATTR);
-      node.removeAttribute(FOLDED_ATTR);
-    });
-  };
+  return btn;
 }
+
+const foldKey = new PluginKey<DecorationSet>("textora-code-fold");
+
+export const codeFoldPlugin = $prose(() => {
+  return new Plugin<DecorationSet>({
+    key: foldKey,
+    state: {
+      init: () => DecorationSet.empty,
+      apply(tr, prev) {
+        if (!tr.docChanged) return prev;
+        // 大文档降级：跳过全量扫描，装饰位置由 mapping 跟随
+        if (isLargeDoc(tr.doc)) {
+          return prev.map(tr.mapping, tr.doc);
+        }
+        const decos: Decoration[] = [];
+        tr.doc.descendants((node, pos) => {
+          if (node.type.name === "heading" || node.type.name === "code_block") {
+            const isCode = node.type.name === "code_block";
+            decos.push(
+              Decoration.widget(
+                pos,
+                (view, getPos) => createFoldButton(view, getPos, isCode),
+                { side: -1, key: `textora-fold-${node.type.name}-${pos}` },
+              ),
+            );
+          }
+        });
+        return DecorationSet.create(tr.doc, decos);
+      },
+    },
+    props: {
+      decorations(state) {
+        return this.getState(state) ?? null;
+      },
+    },
+  });
+});
+
+// 兼容旧调用（MilkdownEditor 曾直接调用 attachCodeFolding）
+export function attachCodeFolding(): () => void {
+  return () => {};
+}
+
+// 基础样式：按钮为 inline（widget 渲染在块节点前），不注入 PM 管理的节点内部
+export function ensureFoldStyles(): void {
+  const styleId = "textora-fold-styles";
+  if (document.getElementById(styleId)) return;
+  const style = document.createElement("style");
+  style.id = styleId;
+  style.textContent = `
+    .${FOLD_BTN_CLASS} {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      text-align: center;
+      line-height: 14px;
+      cursor: pointer;
+      font-size: 10px;
+      color: var(--textora-fg-muted);
+      border-radius: 3px;
+      user-select: none;
+    }
+    .${FOLD_BTN_CLASS}:hover {
+      background: var(--textora-bg-muted);
+      color: var(--textora-fg);
+    }
+    [${FOLDED_ATTR}="true"]::after {
+      content: " ...";
+      color: var(--textora-fg-muted);
+      font-style: italic;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+ensureFoldStyles();

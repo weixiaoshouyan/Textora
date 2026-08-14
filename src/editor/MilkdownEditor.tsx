@@ -9,7 +9,7 @@ import { history } from "@milkdown/plugin-history";
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
 import { replaceAll as replaceAllAction } from "@milkdown/utils";
 import { attachCodeHighlighter, refreshCodeHighlighter } from "../plugins/codeHighlight";
-import { attachCodeFolding } from "../plugins/codeFold";
+import { codeFoldPlugin } from "../plugins/codeFold";
 import { setShikiTheme } from "../plugins/shikiClient";
 // 高级功能插件（数学 / 图表 / 目录）
 import { mathPlugin, bumpMath } from "../plugins/math";
@@ -111,7 +111,9 @@ export function MilkdownEditor({ content, onChange, readOnly = false }: Props) {
       .use(mermaidPlugin)
       .use(tocPlugin)
       // Markdown 编辑快捷键（标题 / 引用 / 代码块）
-      .use(markdownShortcuts);
+      .use(markdownShortcuts)
+      // 标题/代码块折叠（按钮用 Decoration widget 注入，避免 PM DOM 循环）
+      .use(codeFoldPlugin);
 
     editor.create()
       .then(() => {
@@ -142,10 +144,6 @@ export function MilkdownEditor({ content, onChange, readOnly = false }: Props) {
       // 挂载 Shiki 代码高亮 + 语言选择器
       const detachCode = attachCodeHighlighter(realView);
       detachRefs.current.push(detachCode);
-
-      // Code folding
-      const detachFold = attachCodeFolding(realView);
-      detachRefs.current.push(detachFold);
 
       // 专注 / 打字机 / 图片交互 / 表格列宽
       detachRefs.current.push(
