@@ -546,7 +546,7 @@ export function buildEditorMenu(): CtxMenuItem[] {
         { label: t("ctx.insertCodeBlock"), onClick: doInsertCodeBlock },
         { label: t("ctx.insertMath"), onClick: doInsertMath },
         { label: t("ctx.insertMermaid"), onClick: doInsertMermaid },
-        { label: t("ctx.insertHR"), onClick: doInsertHR },
+        { label: t("ctx.insertHr"), onClick: doInsertHR },
         { label: t("ctx.insertTaskList"), onClick: doInsertTaskList },
         { label: t("ctx.insertBulletList"), onClick: doInsertBulletList },
         { label: t("ctx.insertOrderedList"), onClick: doInsertOrderedList },
