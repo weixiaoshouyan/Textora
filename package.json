@@ -47,7 +47,7 @@
     "@milkdown/prose": "^7.21.3",
     "@milkdown/transformer": "^7.21.3",
     "@milkdown/utils": "^7.21.3",
-    "@playwright/test": "^1.62.0",
+    "@playwright/test": "^1.62.1",
     "@shikijs/core": "^1.29.2",
     "@shikijs/engine-javascript": "^1.29.2",
     "@shikijs/engine-oniguruma": "^1.29.2",
