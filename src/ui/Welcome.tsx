@@ -1,19 +1,34 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { useLocale, tFor } from "../i18n";
+import { readRecents, type RecentFile } from "../store/recents";
 
 export function Welcome() {
   const newFile = useAppStore((s) => s.newFile);
   const openFile = useAppStore((s) => s.openFile);
+  const openPath = useAppStore((s) => s.openPath);
   const locale = useLocale((s) => s.locale);
   const t = tFor(locale);
 
   const [visible, setVisible] = useState(false);
+  const [recents, setRecents] = useState<RecentFile[]>([]);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setVisible(true));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  // 欢迎页每次出现时读取最近打开的文件
+  useEffect(() => {
+    setRecents(readRecents());
+  }, []);
+
+  /** 父目录路径（去掉文件名） */
+  const parentDirOf = (p: string): string => {
+    const parts = p.split(/[\\/]/).filter(Boolean);
+    parts.pop();
+    return parts.join("/") || p;
+  };
 
   return (
     <div
@@ -133,6 +148,53 @@ export function Welcome() {
         >
           {t("open")}
         </button>
+
+        {/* Recent files */}
+        {recents.length > 0 && (
+          <div className="mt-8 text-left">
+            <div
+              className="text-xs font-medium mb-2"
+              style={{ color: "var(--textora-fg-muted)", letterSpacing: "0.02em" }}
+            >
+              {t("welcome.recentFiles")}
+            </div>
+            <ul style={{ maxHeight: 200, overflowY: "auto" }}>
+              {recents.map((r) => (
+                <li key={r.path}>
+                  <button
+                    className="w-full flex items-baseline gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-100 cursor-pointer"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--textora-fg)",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = "var(--textora-bg-elev)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = "none";
+                    }}
+                    onClick={() => void openPath(r.path)}
+                    title={r.path}
+                  >
+                    <span
+                      className="truncate text-sm"
+                      style={{ flexShrink: 1, minWidth: 0 }}
+                    >
+                      {r.name}
+                    </span>
+                    <span
+                      className="truncate text-xs"
+                      style={{ color: "var(--textora-fg-muted)", flexShrink: 0 }}
+                    >
+                      {parentDirOf(r.path)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

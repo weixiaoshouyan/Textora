@@ -31,6 +31,28 @@ async function withDialogTimeout<T>(promise: Promise<T>, fallback: T, ms = 60_00
   }
 }
 
+// 进行中的原生对话框计数（按发起的 webContents id）：
+// 主进程关窗兜底定时器据此暂停强杀——用户还在另存为/确认对话框里操作时
+// 强制销毁窗口会丢未保存修改（渲染层兜底同样基于此思路，见 hooks/useWindowClose.ts）
+const openDialogCounts = new Map<number, number>();
+
+/** 该窗口是否还有原生对话框等待用户操作 */
+export function hasOpenNativeDialog(webContentsId: number): boolean {
+  return (openDialogCounts.get(webContentsId) ?? 0) > 0;
+}
+
+/** 跟踪一次对话框生命周期：结束时递减对应窗口的计数（sender 缺失时跳过，如单元测试环境） */
+function trackDialog<T>(evt: Electron.IpcMainInvokeEvent, promise: Promise<T>): Promise<T> {
+  const id = evt?.sender?.id;
+  if (typeof id !== 'number') return promise;
+  openDialogCounts.set(id, (openDialogCounts.get(id) ?? 0) + 1);
+  return promise.finally(() => {
+    const next = (openDialogCounts.get(id) ?? 1) - 1;
+    if (next <= 0) openDialogCounts.delete(id);
+    else openDialogCounts.set(id, next);
+  });
+}
+
 export function registerDialogHandlers(deps: DialogHandlersDeps): void {
   const { getMainWindow } = deps;
 
@@ -72,14 +94,17 @@ export function registerDialogHandlers(deps: DialogHandlersDeps): void {
     if (e2eDir && options?.defaultPath) return path.join(e2eDir, options.defaultPath);
     const win = getMainWindow();
     if (!win) return null;
-    const result = await withDialogTimeout(
-      dialog.showSaveDialog(win, {
-        title: options?.title,
-        defaultPath: options?.defaultPath,
-        filters: options?.filters,
-      }),
-      // 父窗口销毁导致对话框永不返回时，用空路径兜底（调用方按取消处理）
-      { canceled: true, filePath: '' }
+    const result = await trackDialog(
+      _evt,
+      withDialogTimeout(
+        dialog.showSaveDialog(win, {
+          title: options?.title,
+          defaultPath: options?.defaultPath,
+          filters: options?.filters,
+        }),
+        // 父窗口销毁导致对话框永不返回时，用空路径兜底（调用方按取消处理）
+        { canceled: true, filePath: '' }
+      ),
     );
     if (result.canceled || !result.filePath) return null;
     const checked = await validateWorkspacePath(result.filePath, { allowMissingLeaf: true });

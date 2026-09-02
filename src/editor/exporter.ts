@@ -12,10 +12,14 @@
  */
 import { invoke, saveDialog, message } from "../ipc";
 import { useAppStore } from "../store/useAppStore";
+import { useLocale, tFor } from "../i18n";
 import { sanitizeHtml as sanitizeHtmlDom } from "./htmlSanitizer";
 import { applySizeToHtml } from "./imageSize";
 
 export const sanitizeHtml = sanitizeHtmlDom;
+
+/** 非组件模块的 i18n 取词 */
+const t = (key: string): string => tFor(useLocale.getState().locale)(key);
 
 // ============== 共享 CSS ==============
 const BASE_CSS = `
@@ -62,6 +66,78 @@ body {
 `;
 
 /**
+ * 导出前净化编辑器 DOM 副本（只操作副本，不影响编辑视图）：
+ * 1. 展开所有折叠：清除 data-textora-folded 标记，还原被 display:none 隐藏的
+ *    兄弟节点与 maxHeight:0 的代码块（否则导出 PDF/HTML 会静默丢失折叠内容）。
+ * 2. 移除编辑器注入的 UI 元素：折叠按钮、语言选择器、复制按钮、代码块 footer 栏。
+ * 3. 代码块只保留 Shiki 渲染层（.textora-code-render > pre）；渲染层缺失时
+ *    保留原始 <pre><code class="language-x">。
+ * 正文 / 表格 / KaTeX 公式（.textora-math-*）/ Mermaid 图表（.textora-mermaid）不受影响。
+ */
+export function cleanDomForExport(root: HTMLElement): string {
+  const clone = root.cloneNode(true) as HTMLElement;
+
+  // 1) 展开折叠（与 plugins/codeFold.ts 的折叠逻辑对称）
+  for (const el of Array.from(clone.querySelectorAll<HTMLElement>("[data-textora-folded]"))) {
+    el.removeAttribute("data-textora-folded");
+    const code = el.querySelector("code");
+    if (code) {
+      code.style.maxHeight = "";
+      code.style.overflow = "";
+    }
+    if (/^h[1-6]$/i.test(el.tagName)) {
+      const level = parseInt(el.tagName[1], 10);
+      let sib = el.nextElementSibling;
+      while (sib) {
+        const tag = sib.tagName.toLowerCase();
+        if (/^h[1-6]$/.test(tag) && parseInt(tag[1], 10) <= level) break;
+        (sib as HTMLElement).style.display = "";
+        sib = sib.nextElementSibling;
+      }
+    }
+  }
+  // 兜底：清掉残留的 display:none / maxHeight:0（折叠状态存 DOM，可能有不完整残留）
+  for (const el of Array.from(clone.querySelectorAll<HTMLElement>("*"))) {
+    if (el.style.display === "none") el.style.display = "";
+    if (el.style.maxHeight === "0px") {
+      el.style.maxHeight = "";
+      el.style.overflow = "";
+    }
+  }
+
+  // 2) 移除编辑器 UI：折叠按钮 / 语言选择器 / 复制按钮 / footer 栏
+  for (const sel of [
+    ".textora-fold-btn",
+    ".textora-code-lang-selector",
+    ".textora-code-lang-dropdown",
+    ".textora-code-copy-btn",
+    ".textora-code-footer",
+  ]) {
+    for (const el of Array.from(clone.querySelectorAll<HTMLElement>(sel))) {
+      el.remove();
+    }
+  }
+
+  // 3) 代码块只保留 Shiki 渲染结果
+  for (const wrap of Array.from(clone.querySelectorAll<HTMLElement>(".textora-codeblock-wrap"))) {
+    const renderPre = wrap.querySelector(".textora-code-render > pre");
+    const originalPre = wrap.querySelector<HTMLPreElement>(":scope > pre");
+    const keep = renderPre
+      ? (renderPre.cloneNode(true) as HTMLElement)
+      : originalPre
+        ? (originalPre.cloneNode(true) as HTMLElement)
+        : null;
+    if (keep) {
+      wrap.replaceWith(keep);
+    } else {
+      wrap.remove();
+    }
+  }
+
+  return clone.innerHTML;
+}
+
+/**
  * 获取渲染后的 HTML。
  * 优先用 DOM innerHTML（WYSIWYG 模式）；
  * 若 DOM 不存在（源码模式），用 Milkdown transformer 重新渲染 Markdown。
@@ -69,7 +145,8 @@ body {
 async function getRenderedHtml(): Promise<string> {
   const editor = document.querySelector(".milkdown .ProseMirror") as HTMLElement | null;
   if (editor && editor.children.length > 0) {
-    let html = sanitizeHtmlDom(editor.innerHTML);
+    // 净化编辑器 DOM 副本：展开折叠 + 剔除编辑器 UI，防止导出内容缺失或混入按钮
+    let html = sanitizeHtmlDom(cleanDomForExport(editor));
     // 内联相对路径图片为 base64
     html = await inlineImages(html);
     return html;
@@ -196,9 +273,9 @@ export async function exportAsHTML() {
   if (!target) return;
   try {
     await invoke("write_text_file", { path: target, contents: full });
-    await message(`Exported to ${target}`, { title: "Export Complete" });
+    await message(t("export.doneMsg").replace("{path}", target), { title: t("export.complete") });
   } catch (e) {
-    await message(String(e), { title: "Export Failed", kind: "error" });
+    await message(String(e), { title: t("export.failed"), kind: "error" });
   }
 }
 
@@ -257,9 +334,9 @@ export async function exportAsDOCX() {
   if (!target) return;
   try {
     await invoke("write_text_file", { path: target, contents: full });
-    await message(`Exported to ${target}`, { title: "Export Complete" });
+    await message(t("export.doneMsg").replace("{path}", target), { title: t("export.complete") });
   } catch (e) {
-    await message(String(e), { title: "Export Failed", kind: "error" });
+    await message(String(e), { title: t("export.failed"), kind: "error" });
   }
 }
 
@@ -322,9 +399,9 @@ export async function exportAsPDF() {
       target_path: target,
       pdf_options: pdfOptions,
     });
-    await message(`Exported to ${target}`, { title: "Export Complete" });
+    await message(t("export.doneMsg").replace("{path}", target), { title: t("export.complete") });
   } catch (e) {
-    await message(String(e), { title: "Export Failed", kind: "error" });
+    await message(String(e), { title: t("export.failed"), kind: "error" });
   }
 }
 
@@ -361,9 +438,9 @@ export async function exportAsPNG() {
   if (!target) return;
   try {
     await invoke("export_png", { html: fullHtml, target_path: target });
-    await message(`Exported to ${target}`, { title: "Export Complete" });
+    await message(t("export.doneMsg").replace("{path}", target), { title: t("export.complete") });
   } catch (e) {
-    await message(String(e), { title: "Export Failed", kind: "error" });
+    await message(String(e), { title: t("export.failed"), kind: "error" });
   }
 }
 

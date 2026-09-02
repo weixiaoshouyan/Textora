@@ -32,6 +32,7 @@ export const en: Record<string, string> = {
 
   // welcome
   "welcome.subtitle": "WYSIWYG Markdown Editor",
+  "welcome.recentFiles": "Recent Files",
 
   // settings
   "settings.title": "Preferences",
@@ -49,6 +50,13 @@ export const en: Record<string, string> = {
   "settings.fontFamily": "Font Family",
   "settings.autoSave": "Auto Save (s)",
   "settings.spellcheck": "Spell Check",
+  "settings.edgeColumn": "Edge Column",
+  "settings.edgeColumnHint": "0 = off",
+
+  // export
+  "export.complete": "Export Complete",
+  "export.failed": "Export Failed",
+  "export.doneMsg": "Exported to {path}",
   "settings.sidebarVisible": "File Tree",
   "settings.outlineVisible": "Outline",
   "settings.focusMode": "Focus Mode",
@@ -109,8 +117,11 @@ export const en: Record<string, string> = {
   "slash.math": "Math Formula",
   "slash.mermaid": "Mermaid Diagram",
   "workspace.close": "Close Workspace",
-  "export.failed": "Export Failed",
 
+  "cmd.graphView": "Knowledge Graph View",
+  "help.aboutDesc": "A clean WYSIWYG Markdown editor.",
+  "prompt.cancel": "Cancel",
+  "prompt.ok": "OK",
   // search
   "search.placeholder": "Search",
   "search.workspacePlaceholder": "Search in workspace…",
@@ -312,6 +323,29 @@ export const en: Record<string, string> = {
 
   // ai
   "ai.welcome": "Hello! I'm an AI writing assistant. I can help you edit documents, generate content, explain code, and more.\n\nType your question below and press Enter to send.",
+  "ai.welcomeShort": "Hello! I'm an AI writing assistant.",
+  "ai.welcomeBulletsTitle": "After choosing a project directory, I can:",
+  "ai.welcomeBullet1": "Plan and write Markdown documents",
+  "ai.welcomeBullet2": "Understand project context and generate content",
+  "ai.welcomeBullet3": "Polish, continue writing, and offer ideas",
+  "ai.welcomeHint": "Type your question below and press Enter to send.",
+  "ai.modeDirect": "Direct-write mode is ON: AI replies are appended to the document automatically.",
+  "ai.modeChat": "Chat-only mode: click \"Insert into Document\" to write a reply into the document.",
+  "ai.directWrite": "Direct Write",
+  "ai.directWriteOn": "ON: AI replies are written to the document automatically",
+  "ai.directWriteOff": "OFF: click \"Insert into Document\" manually",
+  "ai.onlyChat": "Chat Only",
+  "ai.unspecified": "Not specified",
+  "ai.projectDirPlaceholder": "Choose a project directory so the AI understands context",
+  "ai.noHistory": "No chat history",
+  "ai.untitledSession": "Untitled Chat",
+  "ai.deleteSession": "Delete this chat",
+  "ai.copy": "Copy",
+  "ai.insertDoc": "Insert into Document",
+  "ai.toolRunning": "Running tool",
+  "ai.enterSend": "send",
+  "ai.enterNewline": "newline",
+  "common.close": "Close",
   "ai.placeholder": "Type your question…",
   "ai.send": "Send",
   "ai.errorNoKey": "Please configure API Key in settings first",

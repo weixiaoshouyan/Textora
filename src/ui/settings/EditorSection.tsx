@@ -70,6 +70,33 @@ export function EditorSection({
       <Row label={t("settings.spellcheck")}>
         <Switch checked={settings.spellcheck} onChange={toggleSpellcheck} />
       </Row>
+
+      <Row label={t("settings.edgeColumn")}>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={200}
+            value={settings.edgeColumn ?? 0}
+            onChange={(e) => {
+              const v = Math.max(0, Math.min(200, Number(e.target.value) || 0));
+              updateSettings({ edgeColumn: v });
+            }}
+            style={{
+              width: 72,
+              padding: "2px 6px",
+              border: "1px solid var(--textora-border)",
+              borderRadius: 4,
+              background: "var(--textora-bg)",
+              color: "var(--textora-fg)",
+              fontFamily: "monospace",
+            }}
+          />
+          <span className="text-xs" style={{ color: "var(--textora-fg-muted)" }}>
+            {t("settings.edgeColumnHint")}
+          </span>
+        </div>
+      </Row>
     </div>
   );
 }

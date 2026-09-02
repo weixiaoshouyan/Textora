@@ -23,6 +23,15 @@ const STRICT_CHANNELS = new Set([
   'textora:search_in_files',
   'textora:export_pdf',
   'textora:export_png',
+  // 高危/重 IO 通道：递归删除、二进制大文件读取、目录枚举、文件监听
+  'textora:remove_path',
+  'textora:read_binary_file',
+  'textora:read_text_file',
+  'textora:list_all_files',
+  'textora:list_md_files',
+  'textora:get_recent_lines',
+  'textora:watch_dir',
+  'textora:read_pdf_file',
 ]);
 
 const STRICT_CONFIG: RateLimitConfig = {

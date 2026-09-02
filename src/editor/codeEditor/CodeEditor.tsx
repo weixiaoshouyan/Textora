@@ -51,7 +51,14 @@ export function CodeEditor({ content, language, onChange, readOnly = false }: Pr
   const [acPos, setAcPos] = useState({ x: 0, y: 0 });
   const [bracketPair, setBracketPair] = useState<BracketPair | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [zoom, setZoom] = useState(100);
+  const [zoom, setZoom] = useState<number>(() => {
+    // 缩放持久化（Notepad++/VSCode 均持久化）：启动时从 localStorage 恢复
+    const saved = Number(localStorage.getItem("textora.editorZoom"));
+    return Number.isFinite(saved) && saved >= 50 && saved <= 200 ? saved : 100;
+  });
+  useEffect(() => {
+    localStorage.setItem("textora.editorZoom", String(zoom));
+  }, [zoom]);
   const [virtualScrollTop, setVirtualScrollTop] = useState(0);
 
   // --- Bookmarks ---
@@ -77,15 +84,16 @@ export function CodeEditor({ content, language, onChange, readOnly = false }: Pr
 
 
   // --- Character edge line ---
-  const [edgeColumn, setEdgeColumn] = useState(0); // 0 = disabled
+  // 从设置读取（0 = 关闭）；旧版本是 localStorage 直读且无写入入口，做一次性迁移
+  const edgeColumn = settings.edgeColumn ?? 0;
   const edgeLineRef = useRef<HTMLDivElement>(null);
 
-  // Update edge line position on mount and when settings change
   useEffect(() => {
-    // Could be loaded from settings
-    const saved = localStorage.getItem("textora.edgeColumn");
-    if (saved) setEdgeColumn(parseInt(saved, 10) || 0);
-  }, []);
+    const legacy = Number(localStorage.getItem("textora.edgeColumn"));
+    if (Number.isFinite(legacy) && legacy > 0 && (settings.edgeColumn ?? 0) <= 0) {
+      useAppStore.getState().updateSettings({ edgeColumn: Math.min(200, Math.floor(legacy)) });
+    }
+  }, [settings.edgeColumn]);
   const [highlightedHtml, setHighlightedHtml] = useState("");
   // 文本区滚动位置（用于折叠遮罩层定位；大文件模式另有 virtualScrollTop）
   const [scrollTop, setScrollTop] = useState(0);

@@ -12,7 +12,6 @@ export interface SettingsState {
   toggleSpellcheck: () => void;
   toggleSidebar: () => void;
   toggleOutline: () => void;
-  toggleVimMode: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -29,5 +28,4 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   toggleSpellcheck: () => get().updateSettings({ spellcheck: !get().settings.spellcheck }),
   toggleSidebar: () => get().updateSettings({ sidebarVisible: !get().settings.sidebarVisible }),
   toggleOutline: () => get().updateSettings({ outlineVisible: !get().settings.outlineVisible }),
-  toggleVimMode: () => get().updateSettings({ vimMode: !get().settings.vimMode }),
 }));

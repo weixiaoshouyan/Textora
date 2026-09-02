@@ -70,23 +70,42 @@ export interface WatchEventPayload {
 export const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdx']);
 export const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'ico', 'avif']);
 export const CODE_EXTS = new Set([
-  'json', 'yaml', 'yml', 'ts', 'tsx', 'js', 'jsx', 'html', 'htm', 'css',
-  'scss', 'less', 'py', 'rs', 'go', 'java', 'c', 'h', 'cpp', 'cc', 'cxx',
-  'hpp', 'sh', 'bash', 'sql', 'xml', 'toml', 'txt',
+  'json', 'jsonc', 'json5', 'yaml', 'yml', 'ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs',
+  'html', 'htm', 'css', 'scss', 'less', 'sass',
+  'py', 'rs', 'go', 'java', 'c', 'h', 'cpp', 'cc', 'cxx', 'hpp', 'cs',
+  'sh', 'bash', 'zsh', 'fish', 'bat', 'cmd', 'ps1', 'sql', 'xml', 'toml', 'txt',
+  'php', 'rb', 'lua', 'kt', 'kts', 'swift', 'vue', 'svelte', 'scala', 'dart',
+  'pl', 'pm', 'r', 'groovy', 'julia', 'ex', 'exs', 'erl', 'hrl', 'hs', 'ml', 'mli',
+  'clj', 'cljs', 'zig', 'nim', 'proto', 'gql', 'graphql', 'prisma', 'vb', 'coffee',
+  'makefile', 'mk', 'dockerfile', 'env', 'properties', 'ini', 'cfg', 'conf',
+  'log', 'diff', 'patch', 'csv', 'tsv', 'asm', 'tex', 'http', 'regex',
 ]);
 
+// 语言 id 均以 Shiki 实际支持为准（scripts 下 shiki 探测验证过），
+// 与 src/plugins/shikiClient.ts 的 SUPPORTED_LANGS 白名单保持一致
 export const LANG_MAP: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript',
-  js: 'javascript', jsx: 'javascript',
+  ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
+  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
   py: 'python', rs: 'rust', go: 'go', java: 'java',
   c: 'c', h: 'c',
-  cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
-  sh: 'bash', bash: 'bash', sql: 'sql',
-  html: 'html', htm: 'html', css: 'css',
-  json: 'json', yaml: 'yaml', yml: 'yaml',
-  xml: 'xml', toml: 'toml',
+  cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp', cs: 'csharp',
+  sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash', sql: 'sql',
+  html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less', sass: 'scss',
+  json: 'json', jsonc: 'jsonc', json5: 'json5', yaml: 'yaml', yml: 'yaml',
+  xml: 'xml', toml: 'toml', txt: 'plaintext',
   md: 'markdown', markdown: 'markdown', mdx: 'markdown',
-  txt: 'plaintext',
+  php: 'php', rb: 'ruby', lua: 'lua', kt: 'kotlin', kts: 'kotlin',
+  swift: 'swift', vue: 'vue', svelte: 'svelte', scala: 'scala', dart: 'dart',
+  bat: 'bat', cmd: 'bat', ps1: 'ps1',
+  pl: 'perl', pm: 'perl', r: 'r', groovy: 'groovy', julia: 'julia',
+  ex: 'elixir', exs: 'elixir', erl: 'erlang', hrl: 'erlang',
+  hs: 'haskell', ml: 'ocaml', mli: 'ocaml', clj: 'clojure', cljs: 'clojure',
+  zig: 'zig', nim: 'nim', proto: 'proto', gql: 'graphql', graphql: 'graphql',
+  prisma: 'prisma', vb: 'vb', coffee: 'coffee',
+  makefile: 'make', mk: 'make', dockerfile: 'dockerfile', env: 'dotenv',
+  properties: 'properties', ini: 'ini', cfg: 'ini', conf: 'ini',
+  log: 'plaintext', diff: 'diff', patch: 'diff', csv: 'csv', tsv: 'tsv',
+  asm: 'asm', tex: 'tex', http: 'http', regex: 'regex',
 };
 
 export const MIME_MAP: Record<string, string> = {

@@ -11,8 +11,12 @@ export function buildMenu(
   const en = locale === 'en';
 
   const sendToWindow = (channel: string, ...args: unknown[]) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(channel, ...args);
+    // 应用菜单是全局单例（Menu.setApplicationMenu），buildMenu 会被每个新窗口重建，
+    // 闭包里的 mainWindow 只是「最后一次构建时的窗口」。必须在点击时路由到
+    // 当前聚焦的窗口，否则多窗口下旧窗口按 Ctrl+S 会把内容保存进另一个窗口的文件。
+    const target = BrowserWindow.getFocusedWindow() ?? mainWindow;
+    if (target && !target.isDestroyed()) {
+      target.webContents.send(channel, ...args);
     }
   };
 

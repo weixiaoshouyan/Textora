@@ -18,6 +18,7 @@ import { buildMenu } from './menu';
 import { registerIpcHandlers } from './ipc-handlers';
 import { closeWatcherEntry, type WatcherCollection } from './watcherCleanup';
 import { initCrashReporter } from './ipc/crashReporter';
+import { hasOpenNativeDialog } from './ipc/dialogs';
 
 // 初始化 electron-log：写入本地日志文件，便于用户反馈问题时附带
 log.initialize();
@@ -109,6 +110,30 @@ function createWindow(): BrowserWindow {
   // 记录 webContents id，供窗口关闭时清理该窗口拥有的目录监听
   const ownerId = win.webContents.id;
 
+  // ===== 导航防护 =====
+  // 渲染层被注入/拖拽恶意内容后可能尝试 location.href 跳转到任意外部页面：
+  // 主窗口只允许加载本地应用页面（生产 file://，开发 http://localhost:1420）。
+  // 注意：不能用后面声明的 isDev 变量（TDZ），这里直接读环境变量。
+  const devAppUrl = (process.env.NODE_ENV === 'development' || process.env.TEXTORA_DEV === '1')
+    ? 'http://localhost:1420'
+    : null;
+  win.webContents.on('will-navigate', (e, url) => {
+    if (devAppUrl && url.startsWith(devAppUrl)) return;
+    if (!url.startsWith('file://')) {
+      log.warn(`Blocked navigation to ${url}`);
+      e.preventDefault();
+    }
+  });
+  // 新窗口一律拒绝；http(s) 外链交给系统浏览器打开
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      void import('electron').then(({ shell }) => shell.openExternal(url));
+    } else {
+      log.warn(`Blocked window.open to ${url}`);
+    }
+    return { action: 'deny' };
+  });
+
   // 渲染进程加载失败时记录日志（原代码缺少该监听，导致 ready-to-show 不触发时无任何错误信息）
   win.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
     log.error(`Renderer did-fail-load: code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
@@ -185,8 +210,13 @@ function createWindow(): BrowserWindow {
     safeSend(win, 'textora:close-request');
     // 兜底：仅当渲染进程长时间无响应（崩溃/卡死）才强制关闭。
     // 用 60 秒而非 3 秒，避免用户在处理保存确认时被强制关窗导致数据丢失。
-    const forceCloseTimer = setTimeout(() => {
+    // 若用户仍在原生对话框（另存为/确认）中操作，延后复查而不是强杀。
+    const forceCloseTimer = setTimeout(function checkForceClose() {
       if (!win.isDestroyed() && !isQuitting) {
+        if (hasOpenNativeDialog(ownerId)) {
+          setTimeout(checkForceClose, 15_000);
+          return;
+        }
         log.warn('Renderer did not respond to close-request within 60s, force closing.');
         win.destroy();
       }

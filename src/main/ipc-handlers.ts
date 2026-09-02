@@ -22,6 +22,7 @@ import { registerExportHandlers } from './ipc/export';
 import { registerDialogHandlers } from './ipc/dialogs';
 import { registerWindowHandlers } from './ipc/window';
 import { registerToolHandlers } from './ipc/tools';
+import { registerPdfHandlers } from './ipc/pdf';
 import type { WatcherCollection } from './watcherCleanup';
 
 export interface IpcDeps {
@@ -38,4 +39,5 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   registerDialogHandlers(deps);
   registerWindowHandlers(deps);
   registerToolHandlers();
+  registerPdfHandlers();
 }

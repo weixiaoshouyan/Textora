@@ -32,6 +32,7 @@ export const zh: Record<string, string> = {
 
   // welcome
   "welcome.subtitle": "所见即所得的 Markdown 编辑器",
+  "welcome.recentFiles": "最近打开",
 
   // settings
   "settings.title": "首选项",
@@ -49,6 +50,13 @@ export const zh: Record<string, string> = {
   "settings.fontFamily": "字体",
   "settings.autoSave": "自动保存（秒）",
   "settings.spellcheck": "拼写检查",
+  "settings.edgeColumn": "字符边缘线（列）",
+  "settings.edgeColumnHint": "0 = 关闭",
+
+  // export
+  "export.complete": "导出完成",
+  "export.failed": "导出失败",
+  "export.doneMsg": "已导出到 {path}",
   "settings.sidebarVisible": "文件树",
   "settings.outlineVisible": "大纲",
   "settings.focusMode": "专注模式",
@@ -109,8 +117,11 @@ export const zh: Record<string, string> = {
   "slash.math": "数学公式",
   "slash.mermaid": "Mermaid 图表",
   "workspace.close": "关闭工作区",
-  "export.failed": "导出失败",
 
+  "cmd.graphView": "知识图谱关系图",
+  "help.aboutDesc": "A clean WYSIWYG Markdown editor.",
+  "prompt.cancel": "取消",
+  "prompt.ok": "确定",
   // search
   "search.placeholder": "搜索",
   "search.workspacePlaceholder": "在工作区内搜索…",
@@ -312,6 +323,29 @@ export const zh: Record<string, string> = {
 
   // ai
   "ai.welcome": "你好！我是 AI 写作助手，可以帮你编辑文档、生成内容、解释代码等。\n\n在下方输入你的问题，按 Enter 发送。",
+  "ai.welcomeShort": "你好！我是 AI 写作助手。",
+  "ai.welcomeBulletsTitle": "选择项目目录后，我可以：",
+  "ai.welcomeBullet1": "帮你规划和撰写 Markdown 文档",
+  "ai.welcomeBullet2": "理解项目上下文，生成相关内容",
+  "ai.welcomeBullet3": "润色、续写、提供写作思路",
+  "ai.welcomeHint": "在下方输入你的问题，按 Enter 发送。",
+  "ai.modeDirect": "当前为「直写文档」模式：AI 回复会自动写入文档。",
+  "ai.modeChat": "当前为「仅对话」模式：回复后点「插入文档」按钮写入。",
+  "ai.directWrite": "直写文档",
+  "ai.directWriteOn": "已开启：AI 回复完成后自动写入文档",
+  "ai.directWriteOff": "已关闭：需手动点击「插入文档」",
+  "ai.onlyChat": "仅对话",
+  "ai.unspecified": "未指定",
+  "ai.projectDirPlaceholder": "选择项目目录，AI 将理解项目上下文",
+  "ai.noHistory": "暂无历史对话",
+  "ai.untitledSession": "未命名对话",
+  "ai.deleteSession": "删除此会话",
+  "ai.copy": "复制",
+  "ai.insertDoc": "插入文档",
+  "ai.toolRunning": "调用工具中",
+  "ai.enterSend": "发送",
+  "ai.enterNewline": "换行",
+  "common.close": "关闭",
   "ai.placeholder": "输入你的问题…",
   "ai.send": "发送",
   "ai.errorNoKey": "请先在设置中配置 API Key",

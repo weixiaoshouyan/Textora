@@ -96,9 +96,18 @@ export interface Settings {
   sidebarVisible: boolean;
   outlineVisible: boolean;
   sidebarWidth: number; // 侧边栏宽度（px）
-  vimMode?: boolean;
+  /** 源码编辑器的字符边缘线列数；0（或缺失）= 关闭 */
+  edgeColumn?: number;
   pdfHeader?: boolean; // 导出 PDF 时显示页眉（文件名）
   pdfFooter?: boolean; // 导出 PDF 时显示页码
+}
+
+/** 欢迎页「最近打开的文件」条目（持久化于 localStorage） */
+export interface RecentFile {
+  path: string;
+  name: string;
+  /** 最近一次成功打开的时间戳（ms） */
+  openedAt: number;
 }
 
 export interface AppState {
@@ -170,6 +179,10 @@ export interface AppState {
   /** Milkdown 注册的高效 markdown 插入函数（仅解析新内容，避免全量 re-parse） */
   insertMarkdownFn: ((markdown: string) => void) | null;
   setInsertMarkdownFn: (fn: ((markdown: string) => void) | null) => void;
+  /** Milkdown 注册的「在光标/选区处插入 markdown」函数：parser 解析为真实节点后
+   *  replaceSelection（右键插入表格/任务列表等使用）。返回 false 表示未就绪或解析失败。 */
+  insertMarkdownAtSelectionFn: ((markdown: string) => boolean) | null;
+  setInsertMarkdownAtSelectionFn: (fn: ((markdown: string) => boolean) | null) => void;
   /** 向当前文档末尾追加 markdown；若 Milkdown 未就绪则回退到 setContent */
   insertMarkdownAtCursor: (markdown: string) => void;
 
@@ -251,7 +264,6 @@ export interface AppState {
   toggleSource: () => void;
   toggleReading: () => void;
   toggleSpellcheck: () => void;
-  toggleVimMode: () => void;
   toggleSidebar: () => void;
   toggleOutline: () => void;
 

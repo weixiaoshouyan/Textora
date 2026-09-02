@@ -22,6 +22,8 @@ const ALLOWED_INVOKE_CHANNELS = new Set([
   'get_recent_lines', 'get_system_info',
   // tools.ts
   'run_tool', 'fetch_url',
+  // pdf.ts
+  'read_pdf_file',
   // window.ts / index.ts
   'window-toggle-always-on-top', 'window-count',
 ]);

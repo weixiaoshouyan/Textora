@@ -25,6 +25,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
+    "test:e2e:electron": "npm run build && playwright test -c playwright.electron.config.mts",
     "package": "npm run build && electron-builder --publish never",
     "package:publish": "npm run build && electron-builder --publish onTag"
   },

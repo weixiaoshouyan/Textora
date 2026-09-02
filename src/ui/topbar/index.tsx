@@ -175,7 +175,7 @@ export function TopBar() {
         {currentName && (
           <span className="truncate">
             {currentName}
-            {dirty && <span style={{ marginLeft: 4, color: "var(--textora-fg)" }}>\u2022</span>}
+            {dirty && <span style={{ marginLeft: 4, color: "var(--textora-fg)" }}>{"\u2022"}</span>}
           </span>
         )}
       </div>

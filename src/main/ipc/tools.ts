@@ -267,8 +267,13 @@ export async function isSafeUrlResolved(raw: string): Promise<{ ok: boolean; err
     return { ok: false, error: 'Invalid URL' };
   }
   const host = u.hostname.replace(/^\[|\]$/g, '');
-  // 字面 IP 已由静态检查覆盖；只有域名才需要解析
-  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || /^[0-9a-f:]+$/i.test(host)) {
+  // 字面 IP 已由静态检查覆盖（isSafeUrl 对 IPv4/IPv6 字面量做了私有/回环/映射检查）；
+  // 只有域名才需要 DNS 反查。注意：IPv6 字面量必然含 ":"，而纯 hex 单标签域名
+  // （如 "abc" / "deadbeef"）不含冒号——若把这类域名误判为 IPv6 跳过解析，
+  // 攻击者控制 DNS 解析到 127.0.0.1 / 169.254.169.254 即可绕过内网防护
+  // （nip.io 类绕过的变体）。
+  const looksLikeIpv6Literal = host.includes(':') && /^[0-9a-f:]+$/i.test(host);
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || looksLikeIpv6Literal) {
     return { ok: true };
   }
   try {
@@ -489,6 +494,29 @@ export function registerToolHandlers(): void {
       if (!resp) return 'Failed to fetch URL: no response';
       if (!resp.ok) {
         return `Failed to fetch URL: ${resp.status} ${resp.statusText}`;
+      }
+      // DNS rebinding TOCTOU 收窄：连接完成、返回内容前再次解析最终主机名，
+      // 若任一新解析地址落回内网/环回，丢弃本次响应——防止检查后 DNS 被切换
+      // 到 169.254.169.254 等元数据地址并把敏感响应回传给调用方。
+      // 连接本身已发生（fetch_url 为 GET，无副作用），但响应数据不会泄漏。
+      {
+        const finalHost = new URL(currentUrl).hostname.replace(/^\[|\]$/g, '');
+        const isLiteralIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(finalHost)
+          || (finalHost.includes(':') && /^[0-9a-f:]+$/i.test(finalHost));
+        if (!isLiteralIp) {
+          try {
+            const postAddresses = await dnsLookup(finalHost, { all: true });
+            for (const { address, family } of postAddresses) {
+              const probe = family === 6 ? `http://[${address}]/` : `http://${address}/`;
+              const check = isSafeUrl(probe);
+              if (!check.ok) {
+                return `Blocked: ${address} resolved to a disallowed address after fetch (possible DNS rebinding)`;
+              }
+            }
+          } catch {
+            // 复查解析失败：无法确认，放行（fetch 已成功，内容为公网响应）
+          }
+        }
       }
       // 限制响应体大小，超过 5MB 截断
       const reader = resp.body?.getReader();

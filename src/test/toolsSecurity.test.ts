@@ -126,6 +126,19 @@ describe("tool execution security", () => {
     expect((await isSafeUrlResolved("https://example.com/")).ok).toBe(true);
   });
 
+  it("does not treat pure-hex hostnames as literal IPv6 (SSRF bypass regression)", async () => {
+    // 回归：纯 hex 单标签域名（"abc"/"deadbeef"）此前被 /^[0-9a-f:]+$/i 误判为
+    // IPv6 字面量而跳过 DNS 反查；攻击者把 DNS 解析到 127.0.0.1 即可绕过内网防护。
+    // IPv6 字面量必须含 ":"，不含冒号的 hex 域名必须走 DNS 反查。
+    lookupMock.mockReset();
+    lookupMock.mockResolvedValueOnce([{ address: "127.0.0.1", family: 4 }]);
+    expect((await isSafeUrlResolved("http://deadbeef/")).ok).toBe(false);
+    // 真实 IPv6 字面量仍直接放行（不触发 DNS 查询）
+    expect(lookupMock).toHaveBeenCalledTimes(1);
+    expect((await isSafeUrlResolved("http://[2606:4700:4700::1111]/")).ok).toBe(true);
+    expect(lookupMock).toHaveBeenCalledTimes(1);
+  });
+
   it("always resolves tool cwd to the configured workspace root", () => {
     setWorkspaceRoot("C:\\workspace");
     expect(resolveToolCwd("C:\\outside", { DIR: "C:\\other" })).toBe("C:\\workspace");

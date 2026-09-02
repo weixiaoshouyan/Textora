@@ -15,6 +15,7 @@ import { useLocale, tFor } from "../i18n";
  */
 export function useAppMenu() {
   useEffect(() => {
+    const t = (key: string) => tFor(useLocale.getState().locale)(key);
     const un = listen("menu", async (e) => {
       const id = e.payload as string;
       const s = useAppStore.getState();
@@ -54,7 +55,7 @@ export function useAppMenu() {
         case "help:about":
           {
             const v = await getAppVersion().catch(() => "0.2.0");
-            await message(`Textora ${v}\nA clean WYSIWYG Markdown editor.`, {
+            await message(`Textora ${v}\n${t("help.aboutDesc")}`, {
               title: "About Textora",
             });
           }

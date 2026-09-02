@@ -85,32 +85,27 @@ export function CommandPalette() {
       },
       {
         id: "graphView",
-        title: locale === "zh" ? "知识图谱关系图 (Graph View)" : "Knowledge Graph View",
+        title: t("cmd.graphView"),
         run: () => s.setGraphViewOpen(true),
       },
       {
-        id: "toggleVimMode",
-        title: locale === "zh" ? "切换 Vim 模式 (Vim Mode)" : "Toggle Vim Mode",
-        run: () => s.toggleVimMode(),
-      },
-      {
         id: "exportHTML",
-        title: locale === "zh" ? "导出为 HTML" : "Export to HTML",
+        title: t("export.html"),
         run: () => void exportAsHTML(),
       },
       {
         id: "exportPDF",
-        title: locale === "zh" ? "导出为 PDF" : "Export to PDF",
+        title: t("export.pdf"),
         run: () => void exportAsPDF(),
       },
       {
         id: "exportPNG",
-        title: locale === "zh" ? "导出为 PNG 图片" : "Export to PNG Image",
+        title: t("export.png"),
         run: () => void exportAsPNG(),
       },
       {
         id: "exportDOCX",
-        title: locale === "zh" ? "导出为 Word 兼容文档 (.doc)" : "Export to Word (.doc)",
+        title: t("export.docx"),
         run: () => void exportAsDOCX(),
       },
       {

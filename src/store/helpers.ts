@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarVisible: true,
   outlineVisible: true,
   sidebarWidth: 240,
-  vimMode: false,
+  edgeColumn: 0,
   pdfHeader: false,
   pdfFooter: false,
 };

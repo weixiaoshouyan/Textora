@@ -20,6 +20,10 @@ import type { ChatMessage } from "../../ai/aiService";
 type SetFn = StoreApi<AppState>["setState"];
 type GetFn = StoreApi<AppState>["getState"];
 
+/** AI 会话默认标题（固定哨兵值，不随界面语言变化）：自动命名逻辑靠它判断
+ *  "尚未按首条消息生成标题"，本地化文案由 UI 层在展示时翻译 */
+export const DEFAULT_AI_TITLE = "新对话";
+
 export function aiSlice(set: SetFn, get: GetFn): Partial<AppState> {
   return {
     // ===== AI 供应商管理 =====
@@ -85,7 +89,9 @@ export function aiSlice(set: SetFn, get: GetFn): Partial<AppState> {
       const id = "session_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const session: ChatSession = {
         id,
-        title: "新对话",
+        // 默认标题用固定哨兵值（不随界面语言变化）：自动命名逻辑靠它判断
+        // "尚未按首条消息生成标题"，本地化文案由 UI 层在展示时翻译
+        title: DEFAULT_AI_TITLE,
         messages: [],
         projectDir: projectDir ?? "",
         createdAt: Date.now(),
@@ -126,7 +132,7 @@ export function aiSlice(set: SetFn, get: GetFn): Partial<AppState> {
         if (ses.id === id) {
           // 自动根据首个用户提问生成对话标题
           let title = ses.title;
-          if ((ses.title === "新对话" || !ses.title) && messages.length > 0) {
+          if ((ses.title === DEFAULT_AI_TITLE || !ses.title) && messages.length > 0) {
             const firstUser = messages.find((m) => m.role === "user");
             if (firstUser) {
               title = firstUser.content.trim().slice(0, 16);
@@ -135,7 +141,7 @@ export function aiSlice(set: SetFn, get: GetFn): Partial<AppState> {
           return {
             ...ses,
             messages,
-            title: title || "新对话",
+            title: title || DEFAULT_AI_TITLE,
             updatedAt: Date.now(),
           };
         }

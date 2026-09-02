@@ -298,18 +298,16 @@ async function doInsertLink() {
 }
 
 function doInsertTable() {
-  const markdown = `\n| Header | Header | Header |\n| ------ | ------ | ------ |\n| Cell   | Cell   | Cell   |\n| Cell   | Cell   | Cell   |\n`;
+  const markdown = "| Header | Header | Header |\n| ------ | ------ | ------ |\n| Cell   | Cell   | Cell   |\n| Cell   | Cell   | Cell   |";
   execInEditor(
     (view) => {
-      const schema = view.state.schema;
-      const codeBlock = schema.nodes.code_block?.create(null, schema.text(markdown));
-      if (codeBlock) {
-        view.dispatch(view.state.tr.replaceSelectionWith(codeBlock));
-      } else {
-        view.dispatch(view.state.tr.insertText(markdown));
-      }
+      // 用 Milkdown parser 生成真实表格节点（gfm）。
+      // 此前错误地把 markdown 源码塞进 code_block，WYSIWYG 中显示为原始文本。
+      const insert = useAppStore.getState().insertMarkdownAtSelectionFn;
+      if (insert && insert(markdown)) return;
+      view.dispatch(view.state.tr.insertText(markdown));
     },
-    (ta) => codeInsertText(ta, markdown)
+    (ta) => codeInsertText(ta, `\n${markdown}\n`)
   );
 }
 
@@ -326,34 +324,49 @@ function doInsertCodeBlock() {
 }
 
 function doInsertMath() {
-  const markdown = "\n$$\n\n$$\n";
+  // math 为装饰器渲染（见 plugins/math.ts）：整段 "$$tex$$" 文本即触发 KaTeX 渲染，
+  // 不能包进 code_block（会把源码显示为文本）。用单行占位保证装饰器命中且
+  // markdown 往返一致（含空行的多行 tex 会被段落拆分破坏渲染）。
+  const markdown = "$$E = mc^2$$";
   execInEditor(
     (view) => {
-      const schema = view.state.schema;
-      const codeBlock = schema.nodes.code_block?.create(null, schema.text(markdown));
-      if (codeBlock) {
-        view.dispatch(view.state.tr.replaceSelectionWith(codeBlock));
+      const { state, dispatch } = view;
+      const { $from } = state.selection;
+      // 光标在空段落中：原地写入（整段文本命中块级公式渲染）
+      if ($from.parent.type.name === "paragraph" && $from.parent.textContent.trim() === "") {
+        dispatch(state.tr.insertText(markdown));
+        return;
+      }
+      // 否则在当前块之后新建段落写入，避免与其他文字混排导致不渲染
+      const blockType = state.schema.nodes.paragraph;
+      if (blockType) {
+        const pos = $from.end($from.depth);
+        const para = blockType.create(null, state.schema.text(markdown));
+        dispatch(state.tr.insert(pos, para));
       } else {
-        view.dispatch(view.state.tr.insertText(markdown));
+        dispatch(state.tr.insertText(markdown));
       }
     },
-    (ta) => codeInsertText(ta, markdown)
+    (ta) => codeInsertText(ta, `\n$$\n\n$$\n`)
   );
 }
 
 function doInsertMermaid() {
-  const markdown = "\n```mermaid\ngraph TD;\n    A-->B;\n```\n";
+  // mermaid 装饰器识别 language === "mermaid" 的 code_block（见 plugins/mermaid.ts）：
+  // 直接创建带 language 属性的代码块，而不是把 ```mermaid 围栏文本再包进代码块。
+  const code = "graph TD;\n    A-->B;";
   execInEditor(
     (view) => {
-      const schema = view.state.schema;
-      const codeBlock = schema.nodes.code_block?.create(null, schema.text(markdown));
-      if (codeBlock) {
-        view.dispatch(view.state.tr.replaceSelectionWith(codeBlock));
+      const { state, dispatch } = view;
+      const codeBlockType = state.schema.nodes.code_block;
+      if (codeBlockType) {
+        const node = codeBlockType.create({ language: "mermaid" }, state.schema.text(code));
+        dispatch(state.tr.replaceSelectionWith(node));
       } else {
-        view.dispatch(view.state.tr.insertText(markdown));
+        dispatch(state.tr.insertText(code));
       }
     },
-    (ta) => codeInsertText(ta, markdown)
+    (ta) => codeInsertText(ta, `\n\`\`\`mermaid\n${code}\n\`\`\`\n`)
   );
 }
 
@@ -373,18 +386,16 @@ function doInsertHR() {
 }
 
 function doInsertTaskList() {
-  const markdown = "\n- [ ] Task 1\n- [ ] Task 2\n- [x] Task 3\n";
+  const markdown = "- [ ] Task 1\n- [ ] Task 2\n- [x] Task 3";
   execInEditor(
     (view) => {
-      const schema = view.state.schema;
-      const codeBlock = schema.nodes.code_block?.create(null, schema.text(markdown));
-      if (codeBlock) {
-        view.dispatch(view.state.tr.replaceSelectionWith(codeBlock));
-      } else {
-        view.dispatch(view.state.tr.insertText(markdown));
-      }
+      // 用 Milkdown parser 生成真实任务列表节点（gfm task_list_item），
+      // 此前错误地把源码塞进 code_block
+      const insert = useAppStore.getState().insertMarkdownAtSelectionFn;
+      if (insert && insert(markdown)) return;
+      view.dispatch(view.state.tr.insertText(markdown));
     },
-    (ta) => codeInsertText(ta, markdown)
+    (ta) => codeInsertText(ta, `\n${markdown}\n`)
   );
 }
 

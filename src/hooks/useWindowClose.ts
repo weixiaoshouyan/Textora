@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
-import { listen, emit } from "../ipc";
+import { listen, emit, isSaveDialogInFlight } from "../ipc";
 import { useAppStore } from "../store/useAppStore";
 
 type CloseState = "idle" | "confirming" | "closing";
@@ -98,14 +98,22 @@ export function useWindowClose() {
         });
         subsRef.current.push(unsubDone, unsubCancel);
         state.closeAllTabs();
-        timerRef.current = setTimeout(() => {
-          const state = useAppStore.getState();
-          // 如果有未完成的确认对话框，不强制关闭，等待用户响应
-          if (state.pendingConfirm) return;
-          cleanup();
-          handler.reset();
-          emit("ready-to-close");
-        }, 10000);
+        // 兜底强制关闭：初始 10s，此后若确认对话框或原生另存为对话框仍在等待用户，
+        // 每 2s 重查（不强推）——用户在文件对话框里选保存位置时被强杀会丢未保存内容。
+        // 主进程侧兜底（60s，同样感知原生对话框）负责最终兜底。
+        const scheduleForceClose = (delayMs: number) => {
+          timerRef.current = setTimeout(() => {
+            const state = useAppStore.getState();
+            if (state.pendingConfirm || isSaveDialogInFlight()) {
+              scheduleForceClose(2000);
+              return;
+            }
+            cleanup();
+            handler.reset();
+            emit("ready-to-close");
+          }, delayMs);
+        };
+        scheduleForceClose(10000);
       },
       readyToClose: () => emit("ready-to-close"),
     });

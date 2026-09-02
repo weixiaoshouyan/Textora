@@ -44,6 +44,8 @@ export function uiSlice(set: SetFn, get: GetFn): Partial<AppState> {
     setEditorView: (v) => set({ editorView: v }),
     insertMarkdownFn: null,
     setInsertMarkdownFn: (fn) => set({ insertMarkdownFn: fn }),
+    insertMarkdownAtSelectionFn: null,
+    setInsertMarkdownAtSelectionFn: (fn) => set({ insertMarkdownAtSelectionFn: fn }),
     insertMarkdownAtCursor: (markdown: string) => {
       const fn = get().insertMarkdownFn;
       if (fn) {
@@ -86,6 +88,5 @@ export function uiSlice(set: SetFn, get: GetFn): Partial<AppState> {
     toggleSpellcheck: () => { useSettingsStore.getState().toggleSpellcheck(); set({ settings: useSettingsStore.getState().settings }); },
     toggleSidebar: () => { useSettingsStore.getState().toggleSidebar(); set({ settings: useSettingsStore.getState().settings }); },
     toggleOutline: () => { useSettingsStore.getState().toggleOutline(); set({ settings: useSettingsStore.getState().settings }); },
-    toggleVimMode: () => { useSettingsStore.getState().toggleVimMode(); set({ settings: useSettingsStore.getState().settings }); },
   };
 }

@@ -160,6 +160,11 @@ export async function searchWorkspace(
 
 export function registerSearchHandlers(): void {
   ipcMain.handle("textora:list_md_files", async (_evt, root: string): Promise<MdFileItem[]> => {
+    // 速率限制：递归枚举可达 1 万文件，失控渲染层高频调用会打爆主进程
+    if (!checkRateLimit('textora:list_md_files')) {
+      log.warn('Rate limit exceeded for textora:list_md_files');
+      throw new Error('Rate limit exceeded. Please wait before retrying.');
+    }
     const checked = await validateWorkspacePath(root);
     if (!checked.ok) throw new Error(checked.message);
     root = checked.resolved;
@@ -208,6 +213,11 @@ export function registerSearchHandlers(): void {
   });
 
   ipcMain.handle("textora:list_all_files", async (_evt, root: string): Promise<AllFileItem[]> => {
+    // 速率限制：递归枚举可达 1 万文件，失控渲染层高频调用会打爆主进程
+    if (!checkRateLimit('textora:list_all_files')) {
+      log.warn('Rate limit exceeded for textora:list_all_files');
+      throw new Error('Rate limit exceeded. Please wait before retrying.');
+    }
     const checked = await validateWorkspacePath(root);
     if (!checked.ok) throw new Error(checked.message);
     root = checked.resolved;

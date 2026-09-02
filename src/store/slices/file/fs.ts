@@ -39,15 +39,33 @@ export function createFsSlice({ set, get, syncFromActive }: SliceDeps): Partial<
       const toPath = `${parentDirOf(from).replace(/[\\/]+$/, "")}/${to}`;
       try {
         await invoke("rename_path", { from, to: toPath });
-        // 同步打开中的标签
-        const tab = get().tabs.find((t) => t.path && normalizePath(t.path) === normalizePath(from));
-        if (tab) {
+        // 同步打开中的标签：目录重命名时，其下所有已打开子文件的 path 都要迁移，
+        // 否则标签仍持旧路径，Ctrl+S 会把内容写回旧路径（在磁盘上重建幽灵文件）
+        const normFrom = normalizePath(from);
+        const normFromLower = normFrom.toLowerCase();
+        const prefixLower = normFromLower + "/";
+        const affected = get().tabs.filter((t) => {
+          if (!t.path) return false;
+          const p = normalizePath(t.path).toLowerCase();
+          return p === normFromLower || p.startsWith(prefixLower);
+        });
+        if (affected.length > 0) {
           set((s) => ({
-            tabs: s.tabs.map((t) =>
-              t.id === tab.id ? { ...t, path: toPath, name: basenameOf(toPath) } : t
-            ),
+            tabs: s.tabs.map((t) => {
+              if (!t.path) return t;
+              const p = normalizePath(t.path);
+              const pl = p.toLowerCase();
+              let nextPath: string | null = null;
+              if (pl === normFromLower) {
+                nextPath = toPath;
+              } else if (pl.startsWith(prefixLower)) {
+                // 子路径部分保留原大小写（Windows 大小写不敏感但不能强转改写）
+                nextPath = `${toPath}${p.slice(normFrom.length)}`;
+              }
+              return nextPath ? { ...t, path: nextPath, name: basenameOf(nextPath) } : t;
+            }),
           }));
-          if (get().activeTabId === tab.id) syncFromActive();
+          if (affected.some((t) => t.id === get().activeTabId)) syncFromActive();
         }
         const ws = get().workspaceRoot;
         if (ws) await get().loadDir(ws);
@@ -97,9 +115,17 @@ export function createFsSlice({ set, get, syncFromActive }: SliceDeps): Partial<
       }),
 
     removeItem: async (path: string) => {
-      // 删除前检查是否有对应 dirty 标签：未保存修改会随文件删除而丢失，需明确警告
-      const openTab = get().tabs.find((t) => t.path && normalizePath(t.path) === normalizePath(path));
-      const confirmMsg = openTab?.dirty
+      // 删除前检查是否有对应 dirty 标签（含被删目录下的子文件标签）：
+      // 未保存修改会随文件删除而丢失，需明确警告
+      const normPath = normalizePath(path).toLowerCase();
+      const prefix = normPath + "/";
+      const affectedTabs = get().tabs.filter((t) => {
+        if (!t.path) return false;
+        const p = normalizePath(t.path).toLowerCase();
+        return p === normPath || p.startsWith(prefix);
+      });
+      const hasDirty = affectedTabs.some((t) => t.dirty);
+      const confirmMsg = hasDirty
         ? tt("dialog.deleteConfirmDirty").replace("{name}", basenameOf(path))
         : tt("dialog.deleteConfirm").replace("{name}", basenameOf(path));
       const yes = await message(confirmMsg, {
@@ -109,7 +135,8 @@ export function createFsSlice({ set, get, syncFromActive }: SliceDeps): Partial<
       if (!yes) return;
       try {
         await invoke("remove_path", { path });
-        if (openTab) get()._removeTab(openTab.id);
+        // 关闭该文件/该目录下所有已打开的标签，避免残留标签持失效路径写回幽灵文件
+        affectedTabs.forEach((t) => get()._removeTab(t.id));
         const ws = get().workspaceRoot;
         if (ws) await get().loadDir(ws);
       } catch (e) {

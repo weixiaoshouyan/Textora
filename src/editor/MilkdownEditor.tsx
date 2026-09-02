@@ -181,6 +181,33 @@ export function MilkdownEditor({ content, onChange, readOnly = false }: Props) {
             v.dispatch(tr.scrollIntoView());
           });
         });
+        // 注册「在光标/选区处插入 markdown」：parser 解析为真实节点后 replaceSelection，
+        // 供右键菜单插入表格/任务列表等使用（返回 false 表示未就绪/解析失败，调用方自行兜底）
+        useAppStore.getState().setInsertMarkdownAtSelectionFn((markdown: string): boolean => {
+          const ed = editorRef.current;
+          if (!ed) return false;
+          let ok = false;
+          try {
+            ed.action((ctx) => {
+              const v = ctx.get(editorViewCtx);
+              const parser = ctx.get(parserCtx);
+              let parsed: ReturnType<typeof parser> | null;
+              try {
+                parsed = parser(markdown);
+              } catch {
+                parsed = null;
+              }
+              if (!parsed || parsed.content.size === 0) return;
+              const { from, to } = v.state.selection;
+              v.dispatch(v.state.tr.replaceWith(from, to, parsed.content).scrollIntoView());
+              ok = true;
+            });
+          } catch (err) {
+            console.warn("[MilkdownEditor] insertMarkdownAtSelection failed:", err);
+            return false;
+          }
+          return ok;
+        });
       }
       })
       .catch((err) => {
@@ -201,6 +228,7 @@ export function MilkdownEditor({ content, onChange, readOnly = false }: Props) {
       if (!readOnly) {
         setEditorView(null);
         useAppStore.getState().setInsertMarkdownFn(null);
+        useAppStore.getState().setInsertMarkdownAtSelectionFn(null);
       }
       editorRef.current = null;
       try {

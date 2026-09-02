@@ -61,9 +61,10 @@ const CMD_ARGS: Record<string, string[]> = {
   store_secret: ["key", "value"],
   read_secret: ["key"],
   delete_secret: ["key"],
-  export_pdf: ["html", "target_path"],
+  export_pdf: ["html", "target_path", "pdf_options"],
   export_png: ["html", "target_path"],
   get_recent_lines: ["lines"],
+  read_pdf_file: ["path"],
 };
 
 import type { IpcCommands } from "./ipcTypes";
@@ -113,7 +114,21 @@ export async function openDialog(
 }
 
 export async function saveDialog(options: any): Promise<string | null> {
-  return window.textora.dialog.save(options);
+  // 跟踪在途的原生另存为对话框：关窗兜底定时器据此暂停强推关闭流程，
+  // 避免用户还在文件对话框里选保存位置时窗口被销毁导致未保存修改丢失
+  saveDialogsInFlight += 1;
+  try {
+    return await window.textora.dialog.save(options);
+  } finally {
+    saveDialogsInFlight -= 1;
+  }
+}
+
+let saveDialogsInFlight = 0;
+
+/** 是否有原生另存为对话框正在等待用户操作（供关窗兜底判断） */
+export function isSaveDialogInFlight(): boolean {
+  return saveDialogsInFlight > 0;
 }
 
 export async function emit(event: string, payload?: any): Promise<void> {

@@ -10,10 +10,12 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore, type ChatSession } from "../store/useAppStore";
+import { DEFAULT_AI_TITLE } from "../store/slices/aiSlice";
 import { chat, type ChatMessage } from "../ai/aiService";
 import { confirmAiToolCall } from "../ai/confirmToolCall";
 import { useLocale, tFor } from "../i18n";
 import { extractDocumentContext, buildProjectContext } from "./ai/chatLogic";
+import { AiMarkdown } from "./ai/AiMarkdown";
 import { openDialog } from "../ipc";
 
 // ===== 快捷指令的系统提示 =====
@@ -47,6 +49,9 @@ const QUICK_ACTIONS = [
 export function AiAssistant() {
   const locale = useLocale((s) => s.locale);
   const t = tFor(locale);
+  // tStable：runChat 是 useCallback（依赖数组固定），不能依赖每次渲染都新建的 t；
+  // 通过 getState 读最新 locale，仅在调用时取词
+  const tStable = useCallback((key: string) => tFor(useLocale.getState().locale)(key), []);
   const content = useAppStore((s) => s.content);
   const workspaceRoot = useAppStore((s) => s.workspaceRoot);
   
@@ -82,8 +87,8 @@ export function AiAssistant() {
     streamingRef.current += chunk;
     setStreaming(streamingRef.current);
   }, []);
-  // 错误信息仅通过 setError 写入（展示逻辑在渲染分支中判断 streaming 前缀），state 值本身不直接读取
-  const [, setError] = useState("");
+  // 错误信息：请求失败（网络/鉴权/超时）必须对用户可见，否则表现为"没有回复"无从排查
+  const [error, setError] = useState("");
   const [projectDir, setProjectDir] = useState("");
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -177,7 +182,7 @@ export function AiAssistant() {
     async (userText: string, systemPrompt?: string) => {
       if (loadingRef.current) return;
       if (!activeProvider || !activeProvider.apiKey) {
-        setError("请先在设置中配置 AI 供应商的 API Key，并设为默认");
+        setError(tStable("ai.errorNoKey"));
         setSettingsPanelOpen(true);
         return;
       }
@@ -217,7 +222,7 @@ export function AiAssistant() {
           workspaceRoot: projectDir || workspaceRoot || "",
           onToolCall: (name) => {
             if (!stillActive()) return;
-            setToolExecutionMsg(`调用工具中: ${name}...`);
+            setToolExecutionMsg(`${tStable("ai.toolRunning")}: ${name}...`);
           },
           confirmToolCall: confirmAiToolCall,
           onChunk: (chunk) => {
@@ -265,7 +270,7 @@ export function AiAssistant() {
           return;
         }
         if (!stillActive()) return;
-        setError(e.message || "请求失败，请检查网络和配置");
+        setError(e.message || tStable("ai.errorUnknown"));
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         streamingRef.current = "";
@@ -275,7 +280,7 @@ export function AiAssistant() {
         }
       }
     },
-    [activeProvider, buildProjectContextCb, getDocContext, setSettingsPanelOpen, createAiSession, updateAiSessionMessages, insertMarkdownAtCursor, projectDir, workspaceRoot, appendStreaming]
+    [activeProvider, buildProjectContextCb, getDocContext, setSettingsPanelOpen, createAiSession, updateAiSessionMessages, insertMarkdownAtCursor, projectDir, workspaceRoot, appendStreaming, tStable]
   );
 
   const handleSend = () => {
@@ -330,26 +335,26 @@ export function AiAssistant() {
         display: "flex", alignItems: "center", gap: 4,
         padding: "8px 12px", borderBottom: "1px solid var(--textora-border)",
       }}>
-        <button className="textora-btn" onClick={handleNewChat} title="新建对话"
-          style={{ fontSize: 12, padding: "2px 8px" }}>+ 新建</button>
-        <button className="textora-btn" onClick={() => setShowHistory(!showHistory)} title="历史对话"
-          style={{ fontSize: 12, padding: "2px 8px" }}>📋 历史</button>
+        <button className="textora-btn" onClick={handleNewChat} title={t("ai.newChat")}
+          style={{ fontSize: 12, padding: "2px 8px" }}>+ {t("ai.newChat")}</button>
+        <button className="textora-btn" onClick={() => setShowHistory(!showHistory)} title={t("ai.history")}
+          style={{ fontSize: 12, padding: "2px 8px" }}>📋 {t("ai.history")}</button>
         <button className="textora-btn" onClick={toggleDirectInsert}
-          title={directInsert ? "已开启：AI 回复完成后自动写入文档" : "已关闭：需手动点击「插入文档」"}
+          title={directInsert ? t("ai.directWriteOn") : t("ai.directWriteOff")}
           style={{
             fontSize: 11, padding: "2px 8px",
             background: directInsert ? "var(--textora-accent)" : "transparent",
             color: directInsert ? "#fff" : "var(--textora-fg)",
             border: "1px solid var(--textora-border)",
           }}>
-          {directInsert ? "✍️ 直写文档" : "✍️ 仅对话"}
+          {directInsert ? "✍️ " + t("ai.directWrite") : "✍️ " + t("ai.onlyChat")}
         </button>
         <div style={{ flex: 1 }} />
         {/* 模型选择器 */}
         <div style={{ position: "relative" }}>
           <button className="textora-btn" onClick={() => setShowModelPicker(!showModelPicker)}
             style={{ fontSize: 11, padding: "2px 8px", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {activeProvider ? (activeProvider.label + " / " + (activeProvider.model || "未指定")) : "选择模型"} ▾
+            {activeProvider ? (activeProvider.label + " / " + (activeProvider.model || t("ai.unspecified"))) : t("ai.selectModel")} ▾
           </button>
           {showModelPicker && (
             <div className="textora-card" style={{
@@ -358,7 +363,7 @@ export function AiAssistant() {
             }}>
               {configuredProviders.length === 0 ? (
                 <div style={{ padding: 8, fontSize: 12, color: "var(--textora-fg-muted)" }}>
-                  暂无已配置供应商，请前往设置配置
+                  {t("ai.noProviders")}
                 </div>
               ) : (
                 configuredProviders.map((p) => (
@@ -374,14 +379,14 @@ export function AiAssistant() {
                       marginBottom: 2,
                     }}>
                     <div style={{ fontWeight: 600 }}>{p.label}</div>
-                    <div style={{ fontSize: 10, opacity: 0.8 }}>{p.model || "未指定模型"}</div>
+                    <div style={{ fontSize: 10, opacity: 0.8 }}>{p.model || t("ai.unspecified")}</div>
                   </div>
                 ))
               )}
             </div>
           )}
         </div>
-        <button className="textora-btn" onClick={() => setOpen(false)} title="关闭"
+        <button className="textora-btn" onClick={() => setOpen(false)} title={t("common.close")}
           style={{ fontSize: 14, padding: "0 6px" }}>✕</button>
       </div>
 
@@ -394,15 +399,15 @@ export function AiAssistant() {
         <span style={{ fontSize: 11, color: "var(--textora-fg-muted)", whiteSpace: "nowrap" }}>📁 项目:</span>
         <input
           type="text" value={projectDir} onChange={(e) => setProjectDir(e.target.value)}
-          placeholder="选择项目目录，AI 将理解项目上下文"
+          placeholder={t("ai.projectDirPlaceholder")}
           style={{
             flex: 1, fontSize: 11, padding: "2px 6px",
             border: "1px solid var(--textora-border)", borderRadius: 4,
             background: "var(--textora-bg)", color: "var(--textora-fg)",
           }}
         />
-        <button className="textora-btn" onClick={handlePickProjectDir} title="浏览目录"
-          style={{ fontSize: 11, padding: "2px 6px" }}>浏览</button>
+        <button className="textora-btn" onClick={handlePickProjectDir} title={t("ai.browse")}
+          style={{ fontSize: 11, padding: "2px 6px" }}>{t("ai.browse")}</button>
       </div>
 
       {/* 历史面板 */}
@@ -413,7 +418,7 @@ export function AiAssistant() {
         }}>
           {sessions.length === 0 ? (
             <div style={{ padding: 12, fontSize: 12, color: "var(--textora-fg-muted)", textAlign: "center" }}>
-              暂无历史对话
+              {t("ai.noHistory")}
             </div>
           ) : (
             sessions.map((s) => (
@@ -426,7 +431,7 @@ export function AiAssistant() {
                 }}>
                 <div style={{ flex: 1, minWidth: 0 }} onClick={() => { handleSelectSession(s); setShowHistory(false); }}>
                   <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {s.title || "未命名对话"}
+                    {s.title === DEFAULT_AI_TITLE || !s.title ? t("ai.untitledSession") : s.title}
                   </div>
                   <div style={{ fontSize: 10, color: "var(--textora-fg-muted)" }}>
                     {new Date(s.updatedAt).toLocaleString()} · {s.messages.length} 条消息
@@ -438,7 +443,7 @@ export function AiAssistant() {
                     deleteAiSession(s.id);
                   }}
                   className="text-xs px-1.5 py-0.5 rounded text-red-500 hover:bg-red-500/10 ml-2"
-                  title="删除此会话"
+                  title={t("ai.deleteSession")}
                 >
                   🗑️
                 </button>
@@ -454,33 +459,32 @@ export function AiAssistant() {
       }}>
         {messages.length === 0 && !loading && (
           <div style={{ color: "var(--textora-fg-muted)", fontSize: 13, textAlign: "center", marginTop: 40 }}>
-            👋 你好！我是 AI 写作助手。<br /><br />
-            选择项目目录后，我可以：<br />
-            • 帮你规划和撰写 Markdown 文档<br />
-            • 理解项目上下文，生成相关内容<br />
-            • 润色、续写、提供写作思路<br /><br />
-            {directInsert
-              ? "✍️ 当前为「直写文档」模式：AI 回复会自动写入文档。"
-              : "当前为「仅对话」模式：回复后点「插入文档」按钮写入。"}
-            <br />在下方输入你的问题，按 Enter 发送。
+            👋 {t("ai.welcomeShort")}<br /><br />
+            {t("ai.welcomeBulletsTitle")}<br />
+            • {t("ai.welcomeBullet1")}<br />
+            • {t("ai.welcomeBullet2")}<br />
+            • {t("ai.welcomeBullet3")}<br /><br />
+            {directInsert ? "✍️ " + t("ai.modeDirect") : t("ai.modeChat")}
+            <br />{t("ai.welcomeHint")}
           </div>
         )}
         {messages.map((msg, i) => (
           <div key={i} style={{
             alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
             maxWidth: "90%", padding: "8px 12px", borderRadius: 8,
-            fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+            fontSize: 13, lineHeight: 1.5,
             background: msg.role === "user" ? "var(--textora-accent)" : "var(--textora-bg-elev)",
             color: msg.role === "user" ? "#fff" : "var(--textora-fg)",
             border: msg.role === "assistant" ? "1px solid var(--textora-border)" : "none",
+            wordBreak: "break-word",
           }}>
-            {msg.content}
+            {msg.role === "assistant" ? <AiMarkdown text={msg.content} /> : msg.content}
             {msg.role === "assistant" && (
               <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
                 <button className="textora-btn" style={{ fontSize: 11, padding: "1px 8px" }}
-                  onClick={() => navigator.clipboard.writeText(msg.content)}>复制</button>
+                  onClick={() => navigator.clipboard.writeText(msg.content)}>{t("ai.copy")}</button>
                 <button className="textora-btn textora-btn-primary" style={{ fontSize: 11, padding: "1px 8px" }}
-                  onClick={() => handleInsert(msg.content)}>插入文档</button>
+                  onClick={() => handleInsert(msg.content)}>{t("ai.insertDoc")}</button>
               </div>
             )}
           </div>
@@ -498,11 +502,31 @@ export function AiAssistant() {
         {toolExecutionMsg && (
           <div style={{
             alignSelf: "flex-start", maxWidth: "90%", padding: "6px 10px", borderRadius: 8,
-            fontSize: 12, lineHeight: 1.5, background: "var(--textora-bg)", 
+            fontSize: 12, lineHeight: 1.5, background: "var(--textora-bg)",
             color: "var(--textora-fg-muted)", fontStyle: "italic", border: "1px dashed var(--textora-border)",
             display: "flex", alignItems: "center", gap: 4
           }}>
             <span className="textora-spin">⚙️</span> {toolExecutionMsg}
+          </div>
+        )}
+        {error && (
+          <div role="alert" style={{
+            alignSelf: "flex-start", maxWidth: "90%", padding: "8px 12px", borderRadius: 8,
+            fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+            background: "var(--textora-bg-elev)",
+            color: "#d4380d",
+            border: "1px solid #ffa39e",
+            display: "flex", alignItems: "flex-start", gap: 6,
+          }}>
+            <span>⚠️</span>
+            <span style={{ flex: 1 }}>{error}</span>
+            <button
+              className="textora-btn"
+              style={{ fontSize: 11, padding: "0 6px", whiteSpace: "nowrap" }}
+              onClick={() => setError("")}
+            >
+              ✕
+            </button>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -514,7 +538,7 @@ export function AiAssistant() {
         borderTop: "1px solid var(--textora-border)",
       }}>
         <span style={{ width: "100%", fontSize: 11, color: "var(--textora-fg-muted)", marginBottom: 2 }}>
-          快捷指令
+          {t("ai.quickActions")}
         </span>
         {QUICK_ACTIONS.map((a) => (
           <button key={a.key}
@@ -539,7 +563,7 @@ export function AiAssistant() {
       }}>
         <textarea ref={inputRef} value={input}
           onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-          placeholder="输入你的问题... (Enter 发送, Shift+Enter 换行)"
+          placeholder={t("ai.placeholder") + " (Enter " + t("ai.enterSend") + ", Shift+Enter " + t("ai.enterNewline") + ")"}
           rows={2}
           style={{
             flex: 1, resize: "none", padding: "6px 10px", fontSize: 13,
@@ -551,7 +575,7 @@ export function AiAssistant() {
         <button className="textora-btn textora-btn-primary"
           onClick={handleSend} disabled={loading || !input.trim()}
           style={{ padding: "6px 14px", height: 36 }}>
-          {loading ? "..." : "发送"}
+          {loading ? "..." : t("ai.send")}
         </button>
       </div>
     </div>

@@ -7,6 +7,8 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+  // 渲染层冒烟测试不含 Electron 全链路（后者由 playwright.electron.config.mts 单独跑）
+  testIgnore: /electron\.spec\.ts/,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

@@ -4,6 +4,7 @@
 import type { AppState } from "../../types";
 import { invoke, message, openDialog } from "../../../ipc";
 import { genId, getActiveTab, normalizePath } from "../../helpers";
+import { addRecent } from "../../recents";
 import { openedFilesWithCooling } from "../sharedState";
 import { tt } from "../tt";
 import type { SliceDeps } from "./types";
@@ -46,11 +47,13 @@ export function createTabsSlice({ set, get, syncFromActive, clearAutoSave }: Sli
       if (!ok) return;
       // Check if file is already open in a tab（大小写/分隔符不敏感，与 openPathAtLine 保持一致）
       const existing = get().tabs.find((t) => t.path && normalizePath(t.path) === normalizePath(path));
-      if (existing) {
+      if (existing && existing.path) {
         set({ activeTabId: existing.id });
         syncFromActive();
         // 记录文件打开时间，用于冷却期判断
         openedFilesWithCooling.set(normalizePath(path), Date.now());
+        // 记录最近打开（再次激活同一文件也刷新排序）
+        addRecent(existing.path, existing.name);
         return;
       }
       try {
@@ -88,6 +91,8 @@ export function createTabsSlice({ set, get, syncFromActive, clearAutoSave }: Sli
         syncFromActive();
         // 记录文件打开时间，用于冷却期判断
         openedFilesWithCooling.set(normalizePath(path), Date.now());
+        // 记录最近打开
+        addRecent(res.path, res.name);
       } catch (err) {
         await message(String(err), { title: tt("dialog.openFailed"), kind: "error" });
       }
@@ -96,7 +101,7 @@ export function createTabsSlice({ set, get, syncFromActive, clearAutoSave }: Sli
     openPathAtLine: async (path: string, line: number) => {
       // 若已打开则直接激活并跳转
       const existing = get().tabs.find((t) => t.path && normalizePath(t.path) === normalizePath(path));
-      if (existing) {
+      if (existing && existing.path) {
         // 合并激活标签和镜像字段的更新
         set({
           activeTabId: existing.id,
@@ -108,6 +113,7 @@ export function createTabsSlice({ set, get, syncFromActive, clearAutoSave }: Sli
         });
         // 记录文件打开时间，用于冷却期判断
         openedFilesWithCooling.set(normalizePath(path), Date.now());
+        addRecent(existing.path, existing.name);
         get().requestJumpLine(line);
         return;
       }
@@ -141,6 +147,7 @@ export function createTabsSlice({ set, get, syncFromActive, clearAutoSave }: Sli
         syncFromActive();
         // 记录文件打开时间，用于冷却期判断
         openedFilesWithCooling.set(normalizePath(path), Date.now());
+        addRecent(res.path, res.name);
         get().requestJumpLine(line);
       } catch (err) {
         await message(String(err), { title: tt("dialog.openFailed"), kind: "error" });

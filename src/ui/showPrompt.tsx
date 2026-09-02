@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { useLocale, tFor } from "../i18n";
 
 /**
  * 命令式 prompt 对话框。
@@ -114,14 +115,14 @@ function PromptDialog({
             }}
             onClick={() => onResolve(null)}
           >
-            Cancel
+            {tFor(useLocale.getState().locale)("prompt.cancel")}
           </button>
           <button
             className="px-3 py-1 text-xs rounded text-white"
             style={{ background: "var(--textora-accent)" }}
             onClick={() => onResolve(value)}
           >
-            OK
+            {tFor(useLocale.getState().locale)("prompt.ok")}
           </button>
         </div>
       </div>

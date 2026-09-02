@@ -77,23 +77,27 @@ function getExportWindow(): BrowserWindow {
  * 导出页 CSP 兜底：即使上游 sanitizer 有遗漏，也不允许任何脚本执行。
  * 导出页是静态渲染（主进程用 executeJavaScript 测量高度，不受页面 CSP 约束），
  * 因此 script-src/connect-src 可全部关闭；仅放行内联图片、样式与字体。
- * 若文档自带 CSP meta，则不再重复注入，避免策略冲突。
+ * 文档自带 CSP 一律移除后重新注入：否则 `default-src *` 之类的宽松策略会覆盖
+ * 这里的安全默认值（导出页根本不需要脚本与网络）。
  */
 const EXPORT_CSP = "default-src 'none'; script-src 'none'; connect-src 'none'; " +
   "img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; " +
   "font-src 'self' data:; media-src 'self' data: blob:; base-uri 'none'; form-action 'none'";
 
 export function injectExportCsp(html: string): string {
-  if (/<meta[^>]+http-equiv\s*=\s*["']?content-security-policy/i.test(html)) {
-    return html;
-  }
+  // 先剥离文档自带的所有 CSP meta（属性顺序可能是 content 在前、http-equiv 在后），
+  // 再注入本文件的严格策略，确保最终生效的一定是安全默认值。
+  const stripped = html.replace(
+    /<meta\b(?=[^>]*http-equiv\s*=\s*["']?content-security-policy)[^>]*>/gi,
+    ''
+  );
   const meta = `<meta http-equiv="Content-Security-Policy" content="${EXPORT_CSP}" />`;
-  const headMatch = html.match(/<head[^>]*>/i);
+  const headMatch = stripped.match(/<head[^>]*>/i);
   if (headMatch && headMatch.index !== undefined) {
     const at = headMatch.index + headMatch[0].length;
-    return html.slice(0, at) + meta + html.slice(at);
+    return stripped.slice(0, at) + meta + stripped.slice(at);
   }
-  return meta + html;
+  return meta + stripped;
 }
 
 /** 把 HTML 写入临时文件并加载，等待页面真正加载完成。 */

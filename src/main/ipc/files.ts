@@ -1,7 +1,8 @@
 /**
  * IPC 处理器：文件读写、目录列表、文件监听、工作区根目录
  */
-import { BrowserWindow, ipcMain, webContents } from 'electron';
+import { BrowserWindow, ipcMain, webContents, shell } from 'electron';
+import log from 'electron-log/main';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
@@ -15,6 +16,8 @@ import {
   sanitizeFilename, isHidden, isSkipDir, setWorkspaceRoot, workspaceRoot,
 } from '../shared';
 import { FILE_SIZE_LIMITS, DIR_LISTING, WATCHER } from '../constants';
+import { checkRateLimit } from '../rateLimiter';
+import { detectTextEncoding } from '../encodingDetect';
 
 export interface WatcherEntry {
   watchers: fs.FSWatcher[];
@@ -54,8 +57,17 @@ export function registerFileHandlers(deps: FileHandlersDeps): void {
     return result.resolved;
   }
 
+  /** 高危通道限流：超限直接抛错（渲染层弹提示），防止失控渲染层高频重 IO */
+  function assertRateLimit(channel: string): void {
+    if (!checkRateLimit(channel)) {
+      log.warn(`Rate limit exceeded for ${channel}`);
+      throw createIpcError('INVALID_ARGUMENT', 'Rate limit exceeded. Please wait before retrying.');
+    }
+  }
+
   // ===== 基础文本读写 =====
   ipcMain.handle('textora:read_text_file', async (_evt, p: string): Promise<string> => {
+    assertRateLimit('textora:read_text_file');
     const resolved = await requireWorkspacePath(p);
     const stat = await fsp.stat(resolved);
     assertWorkspaceSize(stat.size, FILE_SIZE_LIMITS.TEXT_MAX_SIZE, 'Text file');
@@ -124,7 +136,10 @@ export function registerFileHandlers(deps: FileHandlersDeps): void {
     const resolved = await requireWorkspacePath(p, true);
     const dir = path.dirname(resolved);
     await fsp.mkdir(dir, { recursive: true });
-    await fsp.writeFile(resolved, '');
+    // 'wx' 标志：文件已存在时报 EEXIST 而非静默截断——「新建文件」的语义是创建
+    // 而不是清空（检查 is_file_exists 与写入之间存在竞态窗口，直接 writeFile('')
+    // 会把恰好已存在的文件清空，导致数据丢失）
+    await fsp.writeFile(resolved, '', { flag: 'wx' });
   });
 
   ipcMain.handle('textora:list_dir', async (_evt, p: string): Promise<DirEntryDto[]> => {
@@ -168,20 +183,32 @@ export function registerFileHandlers(deps: FileHandlersDeps): void {
   });
 
   ipcMain.handle('textora:remove_path', async (_evt, p: string): Promise<void> => {
+    assertRateLimit('textora:remove_path');
     const resolved = await requireWorkspacePath(p);
     const stat = await fsp.lstat(resolved);
     if (stat.isDirectory()) {
       // 收窄 TOCTOU：递归删除前复核目录自身仍位于工作区内（防校验后被替换为指向外部的 junction）
       await assertDirStillWithinWorkspace(path.join(resolved, '.placeholder'));
-      await fsp.rm(resolved, { recursive: true, force: true });
     } else {
       await assertDirStillWithinWorkspace(resolved);
+    }
+    // 优先移入系统回收站（可恢复），失败（跨盘/平台不支持等）再回退永久删除
+    try {
+      await shell.trashItem(resolved);
+      return;
+    } catch (err) {
+      log.warn(`trashItem failed for ${resolved}, falling back to permanent delete:`, err);
+    }
+    if (stat.isDirectory()) {
+      await fsp.rm(resolved, { recursive: true, force: true });
+    } else {
       await fsp.unlink(resolved);
     }
   });
 
   // ===== 文件监听（带防抖） =====
   ipcMain.handle('textora:watch_dir', async (evt, id: string, p: string): Promise<void> => {
+    assertRateLimit('textora:watch_dir');
     const resolved = await requireWorkspacePath(p);
     const ownerId = evt.sender.id;
     // 清理旧 watcher：兼容新旧两种存储形式
@@ -325,6 +352,7 @@ export function registerFileHandlers(deps: FileHandlersDeps): void {
   });
 
   ipcMain.handle('textora:read_binary_file', async (_evt, p: string): Promise<string> => {
+    assertRateLimit('textora:read_binary_file');
     const resolved = await requireWorkspacePath(p);
     const stat = await fsp.stat(resolved);
     assertWorkspaceSize(stat.size, FILE_SIZE_LIMITS.BINARY_MAX_SIZE, 'Binary file');
@@ -439,10 +467,22 @@ export function registerFileHandlers(deps: FileHandlersDeps): void {
         text = swapped.toString('utf16le');
       }
     } else {
-      text = buf.toString('utf-8');
-      if (text.includes('\uFFFD') && !Buffer.from(text, 'utf-8').equals(buf)) {
+      // 无 BOM：UTF-8 → GBK → latin1。旧逻辑在 UTF-8 解码出现 U+FFFD 时直接回退
+      // latin1，导致无 BOM 的 GBK 中文文件打开即乱码，因此改为先做编码检测
+      const detected = detectTextEncoding(buf);
+      if (detected === 'gbk') {
+        try {
+          const iconv = await import('iconv-lite');
+          text = iconv.decode(buf, 'gbk');
+          encoding = 'gbk';
+        } catch {
+          text = buf.toString('utf-8');
+        }
+      } else if (detected === 'latin1') {
         encoding = 'latin1';
         text = buf.toString('latin1');
+      } else {
+        text = buf.toString('utf-8');
       }
     }
 

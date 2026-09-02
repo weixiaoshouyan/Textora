@@ -11,6 +11,7 @@ const MilkdownEditor = lazy(() => import("./editor/MilkdownEditor").then((m) => 
 const CodeEditor = lazy(() => import("./editor/codeEditor").then((m) => ({ default: m.CodeEditor })));
 const SplitView = lazy(() => import("./ui/SplitView").then((m) => ({ default: m.SplitView })));
 import { ImageView, HexView } from "./editor/FileViewers";
+import { CsvViewer, JsonViewer, PdfViewer, extOf } from "./editor/viewers";
 import { FindReplace } from "./ui/FindReplace";
 import { QuickOpen } from "./ui/QuickOpen";
 const SettingsPanel = lazy(() => import("./ui/settings").then(m => ({ default: m.SettingsPanel })));
@@ -154,6 +155,11 @@ export default function App() {
     if (splitViewOpen && (activeTab.kind === "markdown" || activeTab.kind === "code")) return <SplitView />;
     if (activeTab.kind === "image") return <ImageView />;
     if (activeTab.kind === "binary") return <HexView />;
+    // 专用查看器（CSV / JSON / PDF）：按扩展名路由，先于通用编辑器
+    const ext = extOf(activeTab.path);
+    if (ext === "pdf" && activeTab.path) return <PdfViewer path={activeTab.path} />;
+    if (ext === "csv" || ext === "tsv") return <CsvViewer text={content} name={activeTab.name} />;
+    if (ext === "json" || ext === "jsonc" || ext === "json5") return <JsonViewer text={content} name={activeTab.name} />;
     if (activeTab.kind === "markdown" && !sourceMode)
       return <MilkdownEditor content={content} onChange={setContent} />;
     return <CodeEditor content={content} language={activeTab.language} onChange={setContent} />;

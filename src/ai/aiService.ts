@@ -120,10 +120,21 @@ async function callOpenAI(
     let fullText = "";
     let buffer = "";
 
+    // 读空闲超时：fetch 的 timeout 只护到「响应头到达」（在 .finally 中已清除），
+    // 流式读取阶段若无任何超时，服务端/网络挂起会让 reader.read() 永久卡死。
+    // 连续 IDLE_TIMEOUT_MS 无新数据则主动 abort（正常生成中每个 chunk 都会重置计时）。
+    const IDLE_TIMEOUT_MS = 120_000;
+    let idleTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
+    };
+
     // Accumulate tool calls（限制条目数防止恶意响应导致内存膨胀）
     const toolCallsMap = new Map<number, any>();
     const MAX_TOOL_CALLS = 50;
 
+    try {
     while (true) {
       // 流式读取过程中若 signal 被 abort，主动 cancel reader 并退出
       if (controller.signal.aborted) {
@@ -131,6 +142,7 @@ async function callOpenAI(
         break;
       }
       const { done, value } = await reader.read();
+      resetIdle();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
@@ -174,6 +186,9 @@ async function callOpenAI(
           // ignore parse errors
         }
       }
+    }
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer);
     }
 
     const tool_calls = toolCallsMap.size > 0 ? Array.from(toolCallsMap.values()) : undefined;
